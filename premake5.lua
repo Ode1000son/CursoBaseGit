@@ -1,4 +1,4 @@
--- Premake5.lua simplificado para Aula 1.1
+
 workspace "CursoOpenGL"
     configurations { "Debug", "Release" }
     architecture "x64"
@@ -30,16 +30,17 @@ project "CursoOpenGL"
 
     includedirs {
         "vendor/glad/include",
-        "vendor/glfw-3.4/include"
+        "vendor/glfw-3.4/include",
+        "vendor/glm"
     }
 
     libdirs {
-        "vendor/glfw-3.4/build/src/%{cfg.buildcfg}"
+        "vendor/glfw-3.4/build/src/%{cfg.buildcfg}",
     }
 
     links {
         "opengl32",
-        "glfw3"
+        "glfw3" 
     }
 
     filter "configurations:Debug"

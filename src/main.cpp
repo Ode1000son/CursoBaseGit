@@ -1,5 +1,8 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -96,9 +99,9 @@ void ProcessInput(GLFWwindow* window)
     }
 }
 
-/// @brief Função principal da Aula 1.2 - Primeiro Triângulo
-/// Esta função demonstra como renderizar geometria básica (triângulo) usando
-/// VAO, VBO, shaders vertex/fragment e o pipeline de renderização OpenGL.
+/// @brief Função principal da Aula 2.1 - Matrizes de Transformação
+/// Esta função demonstra o uso das matrizes MVP (Model, View, Projection) para
+/// transformar objetos 3D. Usa GLM para matemática 3D e uniforms nos shaders.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -115,7 +118,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 1.2 - Primeiro Triangulo", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 2.1 - Matrizes de Transformacao", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -173,29 +176,74 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    // === CONFIGURAÇÃO DAS MATRIZES MVP ===
+    // Matriz Model: transforma o objeto local para o mundo
+    glm::mat4 model = glm::mat4(1.0f);  // Matriz identidade inicialmente
+
+    // Matriz View: câmera posicionada em (0,0,3) olhando para (0,0,0)
+    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
+
+    // Matriz Projection: transforma para coordenadas de recorte
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f),  // FOV
+                                           1280.0f / 720.0f,     // Aspect ratio
+                                           0.1f,                  // Near plane
+                                           100.0f);               // Far plane
+
+    // Habilitar depth testing para renderização 3D
+    glEnable(GL_DEPTH_TEST);
+
     // === LOOP PRINCIPAL DA APLICAÇÃO ===
     while (!glfwWindowShouldClose(window))
     {
         ProcessInput(window);
 
-        // Limpa o buffer de cor
+        // Limpa os buffers de cor e profundidade
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // === RENDERIZAÇÃO DO TRIÂNGULO ===
+        // === RENDERIZAÇÃO DO TRIÂNGULO COM TRANSFORMAÇÕES ===
         shaderProgram.Use();
+
+        // === APLICAÇÃO DE TRANSFORMAÇÕES 3D ===
+        // Aplicar rotação ao modelo para criar movimento animado
+        // glm::rotate(matriz, ângulo_em_radianos, eixo_de_rotação)
+        // - model: matriz atual que será multiplicada pela rotação
+        // - glfwGetTime(): tempo decorrido em segundos desde o início
+        // - glm::radians(5.0f): converte 5 graus para radianos (velocidade de rotação)
+        // - glm::vec3(0.0f, 0.0f, 1.0f): eixo Z (rotação no plano XY)
+        model = glm::rotate(model, (float)glfwGetTime() * glm::radians(5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        // === CONFIGURAÇÃO DOS UNIFORMS NO SHADER ===
+        // Obter localizações das variáveis uniform no shader
+        unsigned int modelLoc = glGetUniformLocation(shaderProgram.program, "model");
+        unsigned int viewLoc = glGetUniformLocation(shaderProgram.program, "view");
+        unsigned int projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
+
+        // Passar as matrizes MVP para o shader via uniforms
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+        // === RENDERIZAÇÃO ===
+        // Vincular o VAO com os dados de geometria
         glBindVertexArray(VAO);
+        // Renderizar o triângulo (3 vértices a partir do índice 0)
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
+        // === GERENCIAMENTO DE BUFFERS ===
+        // Trocar os buffers (double buffering) para exibir o frame renderizado
         glfwSwapBuffers(window);
+        // Processar eventos da janela (teclado, mouse, redimensionamento, etc.)
         glfwPollEvents();
     }
 
-    // === LIMPEZA ===
+    // === LIMPEZA DE RECURSOS ===
+    // Liberar recursos OpenGL alocados
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     shaderProgram.Delete();
 
+    // Finalizar GLFW e liberar recursos do sistema
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
