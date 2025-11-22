@@ -7,6 +7,13 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include "camera.h"
+
+// === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
+Camera camera;  // Instância da câmera
+bool firstMouse = true;  // Controle para primeira captura do mouse
+float lastX = 400.0f;    // Última posição X do mouse
+float lastY = 300.0f;    // Última posição Y do mouse
 
 // === ESTRUTURAS DE SHADER ===
 struct ShaderProgram {
@@ -89,19 +96,74 @@ void FramebufferSizeCallback(GLFWwindow*, int width, int height)
     glViewport(0, 0, width, height);
 }
 
-/// @brief Processa entrada do teclado
+/// @brief Processa entrada do teclado (WASD + ESC)
 /// @param window Ponteiro para a janela GLFW
-void ProcessInput(GLFWwindow* window)
+/// @param deltaTime Tempo decorrido desde o último frame
+void ProcessInput(GLFWwindow* window, float deltaTime)
 {
+    // ESC para fechar
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     {
         glfwSetWindowShouldClose(window, true);
     }
+
+    // Movimentação WASD + QE (cima/baixo)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        camera.ProcessKeyboard(DOWN, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        camera.ProcessKeyboard(UP, deltaTime);
 }
 
-/// @brief Função principal da Aula 2.1 - Matrizes de Transformação
-/// Esta função demonstra o uso das matrizes MVP (Model, View, Projection) para
-/// transformar objetos 3D. Usa GLM para matemática 3D e uniforms nos shaders.
+/// @brief Callback para movimento do mouse
+/// @param window Ponteiro para a janela GLFW
+/// @param xpos Posição X atual do mouse
+/// @param ypos Posição Y atual do mouse
+void MouseCallback(GLFWwindow* window, double xpos, double ypos)
+{
+    static_cast<void>(window); // Evita warning de parâmetro não usado
+
+    // Verificar se o botão direito está pressionado
+    bool rightButtonPressed = (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS);
+
+    // Capturar ou liberar o cursor baseado no botão direito
+    if (rightButtonPressed) {
+        // Capturar cursor quando botão direito for pressionado
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+        if (firstMouse) {
+            lastX = static_cast<float>(xpos);
+            lastY = static_cast<float>(ypos);
+            firstMouse = false;
+        }
+
+        // Calcula o deslocamento do mouse
+        float xoffset = static_cast<float>(xpos) - lastX;
+        float yoffset = lastY - static_cast<float>(ypos); // Invertido
+
+        // Passa o movimento para a câmera
+        camera.ProcessMouseMovement(xoffset, yoffset);
+    } else {
+        // Liberar cursor quando botão direito for solto
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        firstMouse = true; // Reset para evitar saltos na próxima captura
+    }
+
+    // Sempre atualizar a posição do mouse para evitar saltos quando o botão for pressionado
+    lastX = static_cast<float>(xpos);
+    lastY = static_cast<float>(ypos);
+}
+
+/// @brief Função principal da Aula 2.2 - Sistema de Câmera
+/// Esta função demonstra um sistema de câmera interativa com movimentação WASD
+/// e controle por mouse. Implementa câmera FPS-style com LookAt matrix.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -118,7 +180,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 2.1 - Matrizes de Transformacao", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 2.2 - Sistema de Camera", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -129,6 +191,11 @@ int main()
     // === CONFIGURAÇÃO DO CONTEXTO ===
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
+
+    // === CONFIGURAÇÃO DO MOUSE ===
+    // Cursor normal inicialmente (só captura com botão direito)
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    glfwSetCursorPosCallback(window, MouseCallback);
 
     // === INICIALIZAÇÃO DO GLAD ===
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
@@ -180,11 +247,8 @@ int main()
     // Matriz Model: transforma o objeto local para o mundo
     glm::mat4 model = glm::mat4(1.0f);  // Matriz identidade inicialmente
 
-    // Matriz View: câmera posicionada em (0,0,3) olhando para (0,0,0)
-    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -3.0f));
-
-    // Matriz Projection: transforma para coordenadas de recorte
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f),  // FOV
+    // Matriz Projection: perspectiva com FOV da câmera
+    glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
                                            1280.0f / 720.0f,     // Aspect ratio
                                            0.1f,                  // Near plane
                                            100.0f);               // Far plane
@@ -193,9 +257,19 @@ int main()
     glEnable(GL_DEPTH_TEST);
 
     // === LOOP PRINCIPAL DA APLICAÇÃO ===
+    // Variáveis para controle de tempo
+    float deltaTime = 0.0f;
+    float lastFrame = 0.0f;
+
     while (!glfwWindowShouldClose(window))
     {
-        ProcessInput(window);
+        // Calcular delta time para movimento suave
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        // Processar entrada do usuário (WASD + mouse)
+        ProcessInput(window, deltaTime);
 
         // Limpa os buffers de cor e profundidade
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
@@ -211,7 +285,7 @@ int main()
         // - glfwGetTime(): tempo decorrido em segundos desde o início
         // - glm::radians(5.0f): converte 5 graus para radianos (velocidade de rotação)
         // - glm::vec3(0.0f, 0.0f, 1.0f): eixo Z (rotação no plano XY)
-        model = glm::rotate(model, (float)glfwGetTime() * glm::radians(5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        //model = glm::rotate(model, (float)glfwGetTime() * glm::radians(5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 
         // === CONFIGURAÇÃO DOS UNIFORMS NO SHADER ===
         // Obter localizações das variáveis uniform no shader
@@ -221,7 +295,7 @@ int main()
 
         // Passar as matrizes MVP para o shader via uniforms
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(camera.GetViewMatrix()));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
         // === RENDERIZAÇÃO ===
