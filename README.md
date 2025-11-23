@@ -1,48 +1,41 @@
-# Aula 3.1 – Carregamento de Texturas
+# Aula 3.2 – Modelos 3D Simples
 
-Quarta entrega prática do curso. Demonstra o carregamento e aplicação de texturas usando stb_image e samplers OpenGL.
+Quinta entrega prática do curso. Evoluímos o pipeline da aula anterior para carregar um modelo glTF via Assimp, configurar atributos completos (posição, normal, UV) e renderizar com iluminação básica. O projeto também demonstra o uso de uma textura fallback (`Vitalik_edit_2.png`) aplicada automaticamente quando o material do modelo não fornece um arquivo válido.
 
 ## Conteúdo Abordado
-- **Classe Texture**: Sistema completo de carregamento de texturas
-- **stb_image**: Biblioteca para carregamento de imagens (PNG, JPG, etc.)
-- **Coordenadas UV**: Mapeamento de texturas nos vértices
-- **Sampler Uniforms**: Passagem de texturas para shaders
-- **Atributos de Vértice**: Posição + Cor + UV coordinates
+- **Integração com Assimp**: Importação de `scene.gltf` e processamento recursivo de nós/meshes.
+- **Estrutura `Model/Mesh`**: Encapsula VBO/VAO/EBO com atributos (posição, normal, UV).
+- **Textura Fallback**: `Texture` padrão utilizada se o material não carregar uma textura difusa.
+- **Iluminação Básica**: Vertex shader envia normais corretas; fragment shader calcula componentes ambiente/difusa/especular para destacar o volume do personagem.
+- **Controles FPS**: Mesmo sistema de câmera da aula 2.2 para inspeção em 3D.
 
 ## Controles
-- **WASD**: Movimentação horizontal (Forward/Back/Left/Right)
-- **QE**: Movimentação vertical (Up/Down)
-- **Botão Direito do Mouse + Movimento**: Rotação da câmera (look around)
-- **ESC**: Sair da aplicação
+- `W A S D`: movimentação no plano.
+- `Q / E`: movimento vertical.
+- `Botão direito + mouse`: look-around (cursor é capturado enquanto pressionado).
+- `ESC`: encerra a aplicação.
 
 ## Como executar
 ```bash
-build.bat    # gera solução e compila
-run.bat      # executa a aplicação
+build.bat    # gera a solução e compila (Premake + MSBuild)
+run.bat      # executa o binário gerado em build/bin/Debug
 ```
 
-## Arquivos da Implementação
+## Estrutura Principal
 ```
 src/
-├── main.cpp       # Loop principal e configuração
-├── camera.h       # Interface da classe Camera
-├── camera.cpp     # Implementação da câmera
-├── texture.h      # Interface da classe Texture
-└── texture.cpp    # Implementação do carregamento de texturas
+├── main.cpp        # Configuração do contexto, shaders e render loop (modelo 3D)
+├── camera.{h,cpp}  # Sistema de câmera FPS
+├── texture.{h,cpp} # Carregamento e gerenciamento de texturas (stb_image)
+├── model.{h,cpp}   # Carregamento Assimp + gerenciamento de meshes
 
 assets/
-├── texture.png    # Textura aplicada ao triângulo
+├── models/
+│   ├── scene.gltf          # Modelo glTF importado
+│   ├── scene.bin           # Buffers do glTF
+│   └── Vitalik_edit_2.png  # Textura usada pelo personagem/fallback
 └── shaders/
-    ├── vertex.glsl     # Shader com suporte a UV coordinates
-    └── fragment.glsl   # Shader com sampler de textura
+    ├── vertex.glsl   # Atributos completos + transformação de normais
+    └── fragment.glsl # Iluminação simples + amostragem de textura
 ```
 
-## Formato dos Dados do Vértice
-```
-Posição (x,y,z) + Cor (r,g,b) + UV (u,v) = 8 floats por vértice
-```
-
-Scripts reutilizam dependências do projeto `ultraMini`.
-
-## Nota
-O triângulo permanece estático para focar nos controles da câmera. A rotação foi comentada no código para demonstração pura do sistema de navegação 3D.

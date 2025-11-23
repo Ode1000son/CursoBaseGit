@@ -1,29 +1,34 @@
 #version 330 core
 
-// Atributo de entrada 0: posição do vértice (vec3)
+// Atributos do modelo importado
 layout (location = 0) in vec3 aPos;
-
-// Atributo de entrada 1: cor do vértice (vec3)
-layout (location = 1) in vec3 aColor;
-
-// Atributo de entrada 2: coordenadas UV (vec2)
+layout (location = 1) in vec3 aNormal;
 layout (location = 2) in vec2 aTexCoord;
 
-// Uniforms das matrizes de transformação
-uniform mat4 model;      // Matriz Model (objeto -> mundo)
-uniform mat4 view;       // Matriz View (mundo -> câmera)
-uniform mat4 projection; // Matriz Projection (câmera -> recorte)
+// Matrizes de transformação
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
 
-// Saídas para o fragment shader
-out vec3 ourColor;    // Cor interpolada
-out vec2 texCoord;    // Coordenadas UV interpoladas
+// Dados enviados ao fragment shader
+out vec3 fragPos;
+out vec3 normal;
+out vec2 texCoord;
 
 void main()
 {
-    // Aplicar as transformações MVP: P * V * M * posição
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
+    // Calcula posição do vértice no espaço do mundo
+    vec4 worldPosition = model * vec4(aPos, 1.0);
+    fragPos = worldPosition.xyz;
 
-    // Passa a cor e coordenadas UV para o fragment shader
-    ourColor = aColor;
+    // Transformação correta das normais usando Normal Matrix
+    // transpose(inverse(model)) remove translação e preserva ângulos
+    // mat3() converte para 3x3 (normais não precisam de componente de translação)
+    normal = mat3(transpose(inverse(model))) * aNormal;
+
+    // Passa coordenadas UV diretamente (não precisam de transformação)
     texCoord = aTexCoord;
+
+    // Aplica pipeline MVP completo: Projeção * Visão * Modelo
+    gl_Position = projection * view * worldPosition;
 }

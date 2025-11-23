@@ -32,7 +32,8 @@ project "CursoOpenGL"
         "vendor/glad/include",
         "vendor/glfw-3.4/include",
         "vendor/glm",
-        "vendor/stb"
+        "vendor/stb",
+        "vendor/assimp/include"
     }
 
     libdirs {
@@ -41,17 +42,20 @@ project "CursoOpenGL"
 
     links {
         "opengl32",
-        "glfw3"
+        "glfw3",
+        "vendor/assimp/assimp-vc143-mt.lib"
     }
 
     filter "configurations:Debug"
         postbuildcommands {
-            "copy \"$(ProjectDir)..\\vendor\\glfw-3.4\\build\\src\\Debug\\glfw3.dll\" \"$(OutDir)\""
+            "copy \"$(ProjectDir)..\\vendor\\glfw-3.4\\build\\src\\Debug\\glfw3.dll\" \"$(OutDir)\"",
+            "copy \"$(ProjectDir)..\\vendor\\assimp\\assimp-vc143-mt.dll\" \"$(OutDir)\""
         }
 
     filter "configurations:Release"
         postbuildcommands {
-            "copy \"$(ProjectDir)..\\vendor\\glfw-3.4\\build\\src\\Release\\glfw3.dll\" \"$(OutDir)\""
+            "copy \"$(ProjectDir)..\\vendor\\glfw-3.4\\build\\src\\Release\\glfw3.dll\" \"$(OutDir)\"",
+            "copy \"$(ProjectDir)..\\vendor\\assimp\\assimp-vc143-mt.dll\" \"$(OutDir)\""
         }
 
     filter {}

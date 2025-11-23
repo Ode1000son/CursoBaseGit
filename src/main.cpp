@@ -9,6 +9,7 @@
 #include <string>
 #include "camera.h"
 #include "texture.h"
+#include "model.h"
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera;  // Instância da câmera
@@ -162,9 +163,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 3.1 - Carregamento de Texturas
-/// Esta função demonstra o carregamento e aplicação de texturas usando stb_image.
-/// O triângulo agora é renderizado com uma textura aplicada.
+/// @brief Função principal da Aula 3.2 - Modelos 3D Simples
+/// Demonstra como carregar um modelo glTF com Assimp e renderizá-lo com texturas.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -181,7 +181,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 3.1 - Carregamento de Texturas", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 3.2 - Modelos 3D Simples", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -211,61 +211,26 @@ int main()
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
-    // === CARREGAMENTO DA TEXTURA ===
-    Texture triangleTexture;
-    if (!triangleTexture.LoadFromFile("assets/texture.png")) {
-        std::cerr << "Falha ao carregar textura!" << std::endl;
+    // === CARREGAMENTO DO MODELO 3D ===
+    Model characterModel;
+    if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
+        std::cerr << "Falha ao carregar modelo 3D (scene.gltf)." << std::endl;
         return -1;
     }
 
-    // === DEFINIÇÃO DOS VÉRTICES DO TRIÂNGULO ===
-    // Triângulo simples com coordenadas normalizadas (-1 a 1)
-    // Formato: Posição (x,y,z) + Cor (r,g,b) + UV (u,v)
-    float vertices[] = {
-        // Posições        // Cores           // Coordenadas UV
-        -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f,  // Vértice inferior esquerdo
-         0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f,  // Vértice inferior direito
-         0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f,  0.5f, 1.0f   // Vértice superior
-    };
-
-    // === CRIAÇÃO DO VAO (Vertex Array Object) ===
-    GLuint VAO;
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
-
-    // === CRIAÇÃO DO VBO (Vertex Buffer Object) ===
-    GLuint VBO;
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    // === CONFIGURAÇÃO DOS ATRIBUTOS DE VÉRTICE ===
-    // Formato dos dados: Posição(3) + Cor(3) + UV(2) = 8 floats por vértice
-    // Atributo 0: Posição (3 floats por vértice)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Atributo 1: Cor (3 floats por vértice)
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    // Atributo 2: Coordenadas UV (2 floats por vértice)
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-
-    // Desvincula o VBO e VAO
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    // === TEXTURA PADRÃO DE FALLBACK ===
+    Texture fallbackTexture;
+    if (!fallbackTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
+        std::cerr << "Falha ao carregar textura padrão de fallback." << std::endl;
+        return -1;
+    }
 
     // === CONFIGURAÇÃO DAS MATRIZES MVP ===
     // Matriz Model: transforma o objeto local para o mundo
-    glm::mat4 model = glm::mat4(1.0f);  // Matriz identidade inicialmente
-
-    // Matriz Projection: perspectiva com FOV da câmera
     glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
-                                           1280.0f / 720.0f,     // Aspect ratio
-                                           0.1f,                  // Near plane
-                                           100.0f);               // Far plane
+                                           1280.0f / 720.0f,
+                                           0.1f,
+                                           100.0f);
 
     // Habilitar depth testing para renderização 3D
     glEnable(GL_DEPTH_TEST);
@@ -289,40 +254,30 @@ int main()
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // === RENDERIZAÇÃO DO TRIÂNGULO COM TEXTURA ===
+        // === RENDERIZAÇÃO DO MODELO 3D ===
         shaderProgram.Use();
 
-        // Vincula a textura na unidade 0
-        triangleTexture.Bind(GL_TEXTURE0);
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
 
-        // Define o sampler uniform para usar a textura da unidade 0
-        glUniform1i(glGetUniformLocation(shaderProgram.program, "textureSampler"), 0);
+        glm::mat4 view = camera.GetViewMatrix();
 
-        // === APLICAÇÃO DE TRANSFORMAÇÕES 3D ===
-        // Aplicar rotação ao modelo para criar movimento animado
-        // glm::rotate(matriz, ângulo_em_radianos, eixo_de_rotação)
-        // - model: matriz atual que será multiplicada pela rotação
-        // - glfwGetTime(): tempo decorrido em segundos desde o início
-        // - glm::radians(5.0f): converte 5 graus para radianos (velocidade de rotação)
-        // - glm::vec3(0.0f, 0.0f, 1.0f): eixo Z (rotação no plano XY)
-        //model = glm::rotate(model, (float)glfwGetTime() * glm::radians(5.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        const GLuint modelLoc = glGetUniformLocation(shaderProgram.program, "model");
+        const GLuint viewLoc = glGetUniformLocation(shaderProgram.program, "view");
+        const GLuint projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
+        const GLuint lightDirLoc = glGetUniformLocation(shaderProgram.program, "lightDirection");
+        const GLuint viewPosLoc = glGetUniformLocation(shaderProgram.program, "viewPos");
+        const GLuint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
 
-        // === CONFIGURAÇÃO DOS UNIFORMS NO SHADER ===
-        // Obter localizações das variáveis uniform no shader
-        unsigned int modelLoc = glGetUniformLocation(shaderProgram.program, "model");
-        unsigned int viewLoc = glGetUniformLocation(shaderProgram.program, "view");
-        unsigned int projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
+        glm::vec3 lightDirection = glm::normalize(glm::vec3(-0.45f, -1.0f, -0.35f));
 
-        // Passar as matrizes MVP para o shader via uniforms
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(camera.GetViewMatrix()));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDirection));
+        glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
+        glUniform1i(samplerLoc, 0);
 
-        // === RENDERIZAÇÃO ===
-        // Vincular o VAO com os dados de geometria
-        glBindVertexArray(VAO);
-        // Renderizar o triângulo (3 vértices a partir do índice 0)
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        characterModel.Draw(fallbackTexture.GetID());
 
         // === GERENCIAMENTO DE BUFFERS ===
         // Trocar os buffers (double buffering) para exibir o frame renderizado
@@ -331,13 +286,7 @@ int main()
         glfwPollEvents();
     }
 
-    // === LIMPEZA DE RECURSOS ===
-    // Liberar recursos OpenGL alocados
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
     shaderProgram.Delete();
-
-    // Finalizar GLFW e liberar recursos do sistema
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
