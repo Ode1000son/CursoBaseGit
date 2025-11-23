@@ -10,6 +10,7 @@
 #include "camera.h"
 #include "texture.h"
 #include "model.h"
+#include "material.h"
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -163,8 +164,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 4.1 - Phong Lighting
-/// Demonstra como aplicar o modelo de iluminação Phong (difusa + especular) em um modelo glTF.
+/// @brief Função principal da Aula 4.2 - Materiais e Propriedades
+/// Demonstra como controlar materiais (ambient/diffuse/specular/shininess) para múltiplos objetos usando Phong lighting.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -181,7 +182,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 4.1 - Phong Lighting", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 4.2 - Materiais e Propriedades", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -211,23 +212,23 @@ int main()
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
-    // === CARREGAMENTO DO PERSONAGEM PRINCIPAL ===
+    // === CARREGAMENTO DOS MODELOS ===
     Model characterModel;
     if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
         std::cerr << "Falha ao carregar modelo 3D (scene.gltf)." << std::endl;
         return -1;
     }
 
-    Texture fallbackTexture;
-    if (!fallbackTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
-        std::cerr << "Falha ao carregar textura padrão de fallback." << std::endl;
-        return -1;
-    }
-
-    // === CARREGAMENTO DO CHÃO (CUBO ESCALADO) ===
     Model floorModel;
     if (!floorModel.LoadFromFile("assets/models/cube.gltf") || !floorModel.HasMeshes()) {
         std::cerr << "Falha ao carregar modelo do chão (cube.gltf)." << std::endl;
+        return -1;
+    }
+
+    // === TEXTURAS DOS MATERIAIS ===
+    Texture characterTexture;
+    if (!characterTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
+        std::cerr << "Falha ao carregar textura do personagem." << std::endl;
         return -1;
     }
 
@@ -246,8 +247,20 @@ int main()
     const glm::vec3 lightAmbient(0.18f, 0.18f, 0.22f);
     const glm::vec3 lightDiffuse(0.85f, 0.85f, 0.9f);
     const glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
-    const glm::vec3 materialSpecular(0.9f, 0.9f, 0.9f);
-    const float materialShininess = 32.0f;
+
+    Material characterMaterial(
+        glm::vec3(0.35f, 0.35f, 0.35f),
+        glm::vec3(1.0f, 1.0f, 1.0f),
+        glm::vec3(0.9f, 0.9f, 0.9f),
+        32.0f,
+        &characterTexture);
+
+    Material floorMaterial(
+        glm::vec3(0.25f, 0.20f, 0.18f),
+        glm::vec3(0.55f, 0.45f, 0.35f),
+        glm::vec3(0.08f, 0.08f, 0.08f),
+        8.0f,
+        &floorTexture);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -261,15 +274,11 @@ int main()
     const GLint lightAmbientLoc = glGetUniformLocation(shaderProgram.program, "light.ambient");
     const GLint lightDiffuseLoc = glGetUniformLocation(shaderProgram.program, "light.diffuse");
     const GLint lightSpecularLoc = glGetUniformLocation(shaderProgram.program, "light.specular");
-    const GLint materialSpecularLoc = glGetUniformLocation(shaderProgram.program, "material.specular");
-    const GLint materialShininessLoc = glGetUniformLocation(shaderProgram.program, "material.shininess");
 
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
     glUniform3fv(lightAmbientLoc, 1, glm::value_ptr(lightAmbient));
     glUniform3fv(lightDiffuseLoc, 1, glm::value_ptr(lightDiffuse));
     glUniform3fv(lightSpecularLoc, 1, glm::value_ptr(lightSpecular));
-    glUniform3fv(materialSpecularLoc, 1, glm::value_ptr(materialSpecular));
-    glUniform1f(materialShininessLoc, materialShininess);
     glUniform1i(samplerLoc, 0);
 
     // === LOOP PRINCIPAL DA APLICAÇÃO ===
@@ -308,16 +317,20 @@ int main()
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
         // === DESENHA O CHÃO ===
+        floorMaterial.Apply(shaderProgram.program);
+        floorMaterial.BindTexture(GL_TEXTURE0);
         glm::mat4 floorMatrix = glm::mat4(1.0f);
         floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, -0.15f, 0.0f));
         floorMatrix = glm::scale(floorMatrix, glm::vec3(10.0f, 0.2f, 10.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
-        floorModel.Draw(floorTexture.GetID());
+        floorModel.Draw(0);
 
         // === DESENHA O PERSONAGEM ===
+        characterMaterial.Apply(shaderProgram.program);
+        characterMaterial.BindTexture(GL_TEXTURE0);
         glm::mat4 characterMatrix = glm::mat4(1.0f);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
-        characterModel.Draw(fallbackTexture.GetID());
+        characterModel.Draw(0);
 
         // === GERENCIAMENTO DE BUFFERS ===
         // Trocar os buffers (double buffering) para exibir o frame renderizado
