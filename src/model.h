@@ -8,6 +8,7 @@
 #include <vector>
 #include <memory>
 #include <string>
+#include <functional>
 
 #include "texture.h"
 #include "material.h"
@@ -50,13 +51,16 @@ public:
     void OverrideAllTextures(Texture* texture);
     void ClearTextureOverrides();
     void ApplyTextureIfMissing(Texture* texture);
+    void ForEachMaterial(const std::function<void(Material&)>& callback);
 
 private:
-    void ProcessNode(aiNode* node, const aiScene* scene);
-    std::unique_ptr<Mesh> ProcessMesh(aiMesh* mesh, const aiScene* scene);
-    std::unique_ptr<Material> CreateMaterial(aiMaterial* sourceMaterial);
-    Texture* LoadMaterialTexture(aiMaterial* material, aiTextureType type);
+    void ProcessNode(aiNode* node, const aiScene* scene, const glm::mat4& parentTransform);
+    std::unique_ptr<Mesh> ProcessMesh(aiMesh* mesh, const aiScene* scene, const glm::mat4& transform);
+    std::unique_ptr<Material> CreateMaterial(aiMaterial* sourceMaterial, const aiScene* scene);
+    Texture* LoadMaterialTexture(aiMaterial* material, aiTextureType type, const aiScene* scene);
+    Texture* LoadEmbeddedTexture(const aiScene* scene, const std::string& identifier);
     Texture* LoadTextureFromPath(const std::string& filepath);
+    static glm::mat4 ConvertMatrix(const aiMatrix4x4& matrix);
 
     std::vector<std::unique_ptr<Mesh>> m_meshes;
     std::vector<std::unique_ptr<Material>> m_materials;

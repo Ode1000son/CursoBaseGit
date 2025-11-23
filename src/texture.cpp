@@ -2,6 +2,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include <iostream>
+#include <vector>
+#include <cstring>
 
 /// @brief Construtor padrão - inicializa membros
 Texture::Texture()
@@ -38,44 +40,65 @@ bool Texture::LoadFromFile(const std::string& filePath)
         return false;
     }
 
-    // Determina o formato OpenGL baseado no número de canais
-    GLenum format;
-    switch (m_channels) {
-        case 1: format = GL_RED;   break;  // Textura em escala de cinza
-        case 3: format = GL_RGB;   break;  // Textura RGB
-        case 4: format = GL_RGBA;  break;  // Textura RGBA
-        default:
-            std::cerr << "Formato de textura não suportado: " << m_channels << " canais" << std::endl;
-            stbi_image_free(imageData);
-            return false;
-    }
+    bool result = UploadToGPU(imageData, m_width, m_height, m_channels);
 
-    // Gera e configura a textura OpenGL
-    glGenTextures(1, &m_textureID);
-    glBindTexture(GL_TEXTURE_2D, m_textureID);
-
-    // Define parâmetros padrão de wrapping e filtragem
-    SetWrapping(GL_REPEAT, GL_REPEAT);
-    SetFiltering(GL_LINEAR, GL_LINEAR);
-
-    // Carrega os dados da imagem para a textura OpenGL
-    glTexImage2D(GL_TEXTURE_2D, 0, format, m_width, m_height, 0, format, GL_UNSIGNED_BYTE, imageData);
-
-    // Gera o mipmap para a textura
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    // Libera os dados da imagem (já foram enviados para GPU)
     stbi_image_free(imageData);
 
-    // Desvincula a textura
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (result) {
+        std::cout << "Textura carregada com sucesso: " << filePath << std::endl;
+        std::cout << "  Dimensões: " << m_width << "x" << m_height << std::endl;
+        std::cout << "  Canais: " << m_channels << std::endl;
+    }
 
-    std::cout << "Textura carregada com sucesso: " << filePath << std::endl;
-    std::cout << "  Dimensões: " << m_width << "x" << m_height << std::endl;
-    std::cout << "  Canais: " << m_channels << std::endl;
-    std::cout << "  Formato: " << (format == GL_RGB ? "RGB" : format == GL_RGBA ? "RGBA" : "RED") << std::endl;
+    return result;
+}
 
-    return true;
+bool Texture::LoadFromMemory(const unsigned char* data, std::size_t size, bool flipVertically)
+{
+    if (!data || size == 0) {
+        return false;
+    }
+
+    Cleanup();
+    stbi_set_flip_vertically_on_load(flipVertically);
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* imageData = stbi_load_from_memory(data, static_cast<int>(size), &width, &height, &channels, 0);
+    if (!imageData) {
+        std::cerr << "Erro ao carregar textura da memória: " << stbi_failure_reason() << std::endl;
+        return false;
+    }
+
+    bool result = UploadToGPU(imageData, width, height, channels);
+    stbi_image_free(imageData);
+    return result;
+}
+
+bool Texture::LoadFromRawData(const unsigned char* data, int width, int height, int channels, bool flipVertically)
+{
+    if (!data || width <= 0 || height <= 0 || channels <= 0) {
+        return false;
+    }
+
+    Cleanup();
+
+    const std::size_t rowSize = static_cast<std::size_t>(width) * static_cast<std::size_t>(channels);
+    const std::size_t totalSize = rowSize * static_cast<std::size_t>(height);
+    const unsigned char* sourceData = data;
+    std::vector<unsigned char> flipped;
+    if (flipVertically) {
+        flipped.resize(totalSize);
+        for (int y = 0; y < height; ++y) {
+            const unsigned char* srcRow = data + (static_cast<std::size_t>(height - 1 - y) * rowSize);
+            unsigned char* dstRow = flipped.data() + static_cast<std::size_t>(y) * rowSize;
+            std::memcpy(dstRow, srcRow, rowSize);
+        }
+        sourceData = flipped.data();
+    }
+
+    return UploadToGPU(sourceData, width, height, channels);
 }
 
 /// @brief Vincula a textura para uso no shader
@@ -140,4 +163,34 @@ void Texture::Cleanup()
         m_height = 0;
         m_channels = 0;
     }
+}
+
+bool Texture::UploadToGPU(const unsigned char* data, int width, int height, int channels)
+{
+    if (!data) {
+        return false;
+    }
+
+    GLenum format;
+    switch (channels) {
+        case 1: format = GL_RED; break;
+        case 3: format = GL_RGB; break;
+        case 4: format = GL_RGBA; break;
+        default:
+            std::cerr << "Formato de textura não suportado: " << channels << " canais" << std::endl;
+            return false;
+    }
+
+    m_width = width;
+    m_height = height;
+    m_channels = channels;
+
+    glGenTextures(1, &m_textureID);
+    glBindTexture(GL_TEXTURE_2D, m_textureID);
+    SetWrapping(GL_REPEAT, GL_REPEAT);
+    SetFiltering(GL_LINEAR, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
 }

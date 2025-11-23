@@ -2,6 +2,7 @@
 
 #include <glad/glad.h>
 #include <string>
+#include <cstddef>
 
 /// @brief Classe para gerenciamento de texturas OpenGL
 /// Esta classe encapsula o carregamento e gerenciamento de texturas usando stb_image
@@ -17,6 +18,12 @@ public:
     /// @param filePath Caminho para o arquivo de imagem
     /// @return true se carregou com sucesso, false caso contrário
     bool LoadFromFile(const std::string& filePath);
+
+    /// @brief Carrega textura a partir de um buffer em memória
+    bool LoadFromMemory(const unsigned char* data, std::size_t size, bool flipVertically = true);
+
+    /// @brief Cria textura a partir de dados de pixels já descompactados
+    bool LoadFromRawData(const unsigned char* data, int width, int height, int channels, bool flipVertically = true);
 
     /// @brief Vincula a textura para uso no shader
     /// @param textureUnit Unidade de textura (GL_TEXTURE0, GL_TEXTURE1, etc.)
@@ -55,4 +62,6 @@ private:
 
     /// @brief Libera a textura se ela foi carregada
     void Cleanup();
+
+    bool UploadToGPU(const unsigned char* data, int width, int height, int channels);
 };

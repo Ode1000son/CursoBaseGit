@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <cstddef>
+#include <utility>
 #include <cmath>
 #include "camera.h"
 #include "texture.h"
@@ -144,19 +146,110 @@ enum class TextureOverrideMode
     Highlight
 };
 
+struct SceneObjectTransform
+{
+    glm::vec3 position{ 0.0f };
+    glm::vec3 rotation{ 0.0f };
+    glm::vec3 scale{ 1.0f };
+};
+
+struct SceneObject
+{
+    SceneObject() = default;
+
+    SceneObject(std::string objectName,
+                Model* objectModel,
+                const SceneObjectTransform& initialTransform)
+        : name(std::move(objectName))
+        , model(objectModel)
+        , transform(initialTransform)
+        , baseTransform(initialTransform)
+    {
+    }
+
+    glm::mat4 GetModelMatrix() const
+    {
+        glm::mat4 modelMatrix(1.0f);
+        modelMatrix = glm::translate(modelMatrix, transform.position);
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+        modelMatrix = glm::scale(modelMatrix, transform.scale);
+        return modelMatrix;
+    }
+
+    std::string name;
+    Model* model{ nullptr };
+    SceneObjectTransform transform{};
+    SceneObjectTransform baseTransform{};
+};
+
+class Scene
+{
+public:
+    void Reserve(std::size_t count) { m_objects.reserve(count); }
+
+    SceneObject& AddObject(std::string name,
+                           Model* model,
+                           const SceneObjectTransform& initialTransform)
+    {
+        m_objects.emplace_back(std::move(name), model, initialTransform);
+        return m_objects.back();
+    }
+
+    std::vector<SceneObject>& Objects() { return m_objects; }
+    const std::vector<SceneObject>& Objects() const { return m_objects; }
+
+private:
+    std::vector<SceneObject> m_objects;
+};
+
+void DrawSceneObjects(const Scene& scene, GLint modelUniformLocation, GLuint program, GLuint fallbackTexture)
+{
+    for (const auto& object : scene.Objects()) {
+        if (!object.model) {
+            continue;
+        }
+        if (modelUniformLocation >= 0) {
+            const glm::mat4 modelMatrix = object.GetModelMatrix();
+            glUniformMatrix4fv(modelUniformLocation, 1, GL_FALSE, glm::value_ptr(modelMatrix));
+        }
+        object.model->Draw(program, fallbackTexture);
+    }
+}
+
+void UpdateSceneAnimation(SceneObject& character, SceneObject& car, float currentTime)
+{
+    character.transform = character.baseTransform;
+    character.transform.position.y += 0.05f * std::sin(currentTime * 1.5f);
+    character.transform.rotation.y += std::sin(currentTime * 0.3f) * 15.0f;
+
+    car.transform = car.baseTransform;
+    car.transform.position.x += std::cos(currentTime * 0.4f) * 0.8f;
+    car.transform.position.z += std::sin(currentTime * 0.4f) * 0.6f;
+    car.transform.position.y += 0.02f * std::sin(currentTime * 2.2f);
+    car.transform.rotation.y += static_cast<float>(std::fmod(currentTime * 45.0f, 360.0f));
+}
+
 void ApplyOverrideMode(TextureOverrideMode mode,
-                       Model& characterModel,
-                       Model& floorModel,
+                       const std::vector<Model*>& models,
                        Texture* checkerTexture,
                        Texture* highlightTexture)
 {
-    characterModel.ClearTextureOverrides();
-    floorModel.ClearTextureOverrides();
+    for (Model* model : models) {
+        if (model) {
+            model->ClearTextureOverrides();
+        }
+    }
 
     auto applyTexture = [&](Texture* texture) {
-        if (texture) {
-            characterModel.OverrideAllTextures(texture);
-            floorModel.OverrideAllTextures(texture);
+        if (!texture) {
+            return;
+        }
+        for (Model* model : models) {
+            if (model) {
+                model->OverrideAllTextures(texture);
+            }
         }
     };
 
@@ -174,8 +267,7 @@ void ApplyOverrideMode(TextureOverrideMode mode,
 
 void HandleOverrideShortcuts(GLFWwindow* window,
                              TextureOverrideMode& currentMode,
-                             Model& characterModel,
-                             Model& floorModel,
+                             const std::vector<Model*>& models,
                              Texture* checkerTexture,
                              Texture* highlightTexture)
 {
@@ -187,7 +279,7 @@ void HandleOverrideShortcuts(GLFWwindow* window,
         bool isPressed = glfwGetKey(window, key) == GLFW_PRESS;
         if (isPressed && !heldState && currentMode != mode) {
             currentMode = mode;
-            ApplyOverrideMode(currentMode, characterModel, floorModel, checkerTexture, highlightTexture);
+            ApplyOverrideMode(currentMode, models, checkerTexture, highlightTexture);
         }
         heldState = isPressed;
     };
@@ -271,8 +363,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 7.1 - Materiais e Texturas
-/// Demonstra carregamento de materiais, múltiplas texturas por mesh e sistema de overrides.
+/// @brief Função principal da Aula 7.2 - Cena Completa
+/// Demonstra gerenciamento de cena com múltiplos modelos, transformações independentes e sistema de overrides.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -286,7 +378,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 7.1 - Materiais e Texturas", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 7.2 - Cena Completa", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -334,6 +426,12 @@ int main()
         return -1;
     }
 
+    Model carModel;
+    if (!carModel.LoadFromFile("assets/models/car.glb") || !carModel.HasMeshes()) {
+        std::cerr << "Falha ao carregar modelo do carro (car.glb)." << std::endl;
+        return -1;
+    }
+
     Texture characterTexture;
     if (!characterTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
         std::cerr << "Falha ao carregar textura do personagem (Vitalik_edit_2.png)." << std::endl;
@@ -360,8 +458,31 @@ int main()
 
     Texture* checkerTexturePtr = checkerTexture.GetID() != 0 ? &checkerTexture : nullptr;
     Texture* highlightTexturePtr = highlightTexture.GetID() != 0 ? &highlightTexture : nullptr;
+    std::vector<Model*> sceneModels{ &characterModel, &floorModel, &carModel };
     TextureOverrideMode overrideMode = TextureOverrideMode::Imported;
-    ApplyOverrideMode(overrideMode, characterModel, floorModel, checkerTexturePtr, highlightTexturePtr);
+    ApplyOverrideMode(overrideMode, sceneModels, checkerTexturePtr, highlightTexturePtr);
+    carModel.ForEachMaterial([](Material& material) {
+        material.SetSpecular(glm::vec3(0.0f));
+        material.SetShininess(1.0f);
+    });
+
+    Scene scene;
+    scene.Reserve(4);
+    scene.AddObject("Floor", &floorModel, SceneObjectTransform{
+        glm::vec3(0.0f, -0.15f, 0.0f),
+        glm::vec3(0.0f),
+        glm::vec3(10.0f, 0.2f, 10.0f)
+    });
+    SceneObject& characterObject = scene.AddObject("Character", &characterModel, SceneObjectTransform{
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, -90.0f, 0.0f),
+        glm::vec3(1.0f)
+    });
+    SceneObject& carObject = scene.AddObject("Car", &carModel, SceneObjectTransform{
+        glm::vec3(2.5f, -0.05f, -2.5f),
+        glm::vec3(0.0f, 90.0f, 0.0f),
+        glm::vec3(0.9f)
+    });
 
     DirectionalLight mainSun{
         glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
@@ -521,7 +642,8 @@ int main()
         lastFrame = currentFrame;
 
         ProcessInput(window, deltaTime);
-        HandleOverrideShortcuts(window, overrideMode, characterModel, floorModel, checkerTexturePtr, highlightTexturePtr);
+        HandleOverrideShortcuts(window, overrideMode, sceneModels, checkerTexturePtr, highlightTexturePtr);
+        UpdateSceneAnimation(characterObject, carObject, currentFrame);
 
         if (PointLight* caster = pointLights.GetLightMutable(shadowPointIndex)) {
             glm::vec3 orbitOffset(
@@ -560,11 +682,6 @@ int main()
         glm::mat4 lightView = glm::lookAt(lightPos, sceneCenter, upVector);
         glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
-        glm::mat4 floorMatrix = glm::mat4(1.0f);
-        floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, -0.15f, 0.0f));
-        floorMatrix = glm::scale(floorMatrix, glm::vec3(10.0f, 0.2f, 10.0f));
-        glm::mat4 characterMatrix = glm::mat4(1.0f);
-
         glViewport(0, 0, kShadowMapWidth, kShadowMapHeight);
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
         glClear(GL_DEPTH_BUFFER_BIT);
@@ -572,14 +689,7 @@ int main()
         if (dirDepthLightSpaceLoc >= 0) {
             glUniformMatrix4fv(dirDepthLightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
         }
-        if (dirDepthModelLoc >= 0) {
-            glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
-        }
-        floorModel.Draw(directionalDepthShader.program, 0);
-        if (dirDepthModelLoc >= 0) {
-            glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
-        }
-        characterModel.Draw(directionalDepthShader.program, 0);
+        DrawSceneObjects(scene, dirDepthModelLoc, directionalDepthShader.program, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, kPointShadowNearPlane, kPointShadowFarPlane);
@@ -607,14 +717,7 @@ int main()
                 glUniformMatrix4fv(pointDepthShadowMatricesLoc[i], 1, GL_FALSE, glm::value_ptr(shadowTransforms[i]));
             }
         }
-        if (pointDepthModelLoc >= 0) {
-            glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
-        }
-        floorModel.Draw(pointDepthShader.program, 0);
-        if (pointDepthModelLoc >= 0) {
-            glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
-        }
-        characterModel.Draw(pointDepthShader.program, 0);
+        DrawSceneObjects(scene, pointDepthModelLoc, pointDepthShader.program, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         glViewport(0, 0, viewportWidth, viewportHeight);
@@ -646,11 +749,7 @@ int main()
         directionalLights.Upload(shaderProgram.program, currentFrame);
         pointLights.Upload(shaderProgram.program);
 
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
-        floorModel.Draw(shaderProgram.program, defaultWhiteTexture);
-
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
-        characterModel.Draw(shaderProgram.program, defaultWhiteTexture);
+        DrawSceneObjects(scene, modelLoc, shaderProgram.program, defaultWhiteTexture);
 
         glfwSwapBuffers(window);
         glfwPollEvents();

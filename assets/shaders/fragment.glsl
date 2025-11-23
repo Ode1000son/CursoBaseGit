@@ -145,9 +145,11 @@ vec3 EvaluatePointLight(const PointLight light, vec3 norm, vec3 viewDir, vec3 fr
 
 void main()
 {
+    const float gamma = 3.2;
     vec3 norm = normalize(normal);
     vec3 viewDir = normalize(viewPos - fragPos);
     vec3 albedo = texture(textureSampler, texCoord).rgb;
+    albedo = pow(albedo, vec3(gamma));
 
     vec3 result = vec3(0.0f);
     for (int i = 0; i < directionalCount; ++i) {
@@ -165,5 +167,7 @@ void main()
         result += pointContribution;
     }
 
-    FragColor = vec4(result, 1.0f);
+    result = max(result, vec3(0.0));
+    vec3 gammaCorrected = pow(result, vec3(1.0 / gamma));
+    FragColor = vec4(gammaCorrected, 1.0f);
 }
