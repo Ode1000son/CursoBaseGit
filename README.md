@@ -1,17 +1,20 @@
-# Aula 6.2 – Point Light Shadows
+# Aula 7.1 – Materiais e Texturas
 
-Segunda aula do módulo de sombras. Expandimos o pipeline direcional da 6.1 para suportar **sombras omnidirecionais de luzes pontuais**, reaproveitando a mesma cena/materials e adicionando um passe extra que renderiza a profundidade em um cubemap com vertex, geometry e fragment shader dedicados.
+Primeira aula do módulo de carregamento avançado. Mantemos o pipeline completo de iluminação/sombras da aula anterior, mas focamos em **materiais importados via Assimp**, **múltiplas texturas por modelo** e um **texture override system** para depuração em tempo real.
 
 ## Conteúdo Abordado
-- **Cubemap depth pass**: criação de um framebuffer dedicado e textura cube map com os shaders `depth_vertex/geometry/fragment`.
-- **Shadow matrices para 6 faces**: geração das seis view-projection (lookAt) usando o geometry shader para renderizar todas as faces em um único draw.
-- **Shadow comparison com bias + PCF esférico**: o fragment shader principal calcula a intensidade angular/distância e aplica PCF 3D sobre o cubemap.
-- **Integração com luzes existentes**: o loop final combina luz direcional (com shadow map 2D legado) e os point lights agora com fator de sombra omnidirecional.
+- **Carregamento de materiais**: cada `aiMaterial` vira um `Material` completo (ambient/diffuse/specular/shininess) enviado antes de cada draw call.
+- **Múltiplas texturas por mesh**: o `Model` armazena um material por mesh, carrega difusa individual e usa fallback branco 1x1 quando preciso.
+- **Texture override system**: atalhos `1/2/3` limpam ou aplicam texturas globais (checker/metálica) usando `Model::OverrideAllTextures`.
+- **Integração com sombras**: o pipeline de shadow mapping direcional + omnidirecional permanece igual, garantindo testes em cenários reais.
 
 ## Controles
 - `W A S D`: movimentação no plano.
 - `Q / E`: movimento vertical.
-- `Botão direito + mouse`: look-around (cursor é capturado enquanto pressionado).
+- `Botão direito + mouse`: look-around (cursor capturado enquanto pressionado).
+- `1`: usa apenas as texturas importadas dos materiais.
+- `2`: força a textura checker em todos os meshes.
+- `3`: aplica a textura metálica/destaque globalmente.
 - `ESC`: encerra a aplicação.
 
 ## Como executar
@@ -23,26 +26,26 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                 # Configura janela, materiais e pipeline de shadow mapping direcional + point
-├── camera.{h,cpp}           # Sistema de câmera FPS usado nos dois passes
+├── main.cpp                 # Pipeline de sombras + sistemas de materiais/override
+├── camera.{h,cpp}           # Câmera FPS usada nos dois passes
 ├── texture.{h,cpp}          # Carregamento/gerenciamento de texturas (stb_image)
-├── material.{h,cpp}         # Materiais reutilizados (personagem + chão)
+├── material.{h,cpp}         # Materiais Phong com suporte a overrides
 ├── light_manager.{h,cpp}    # Gerencia as luzes direcionais, pontuais e spots
-├── model.{h,cpp}            # Carregamento Assimp + gerenciamento de meshes
+├── model.{h,cpp}            # Importador Assimp + materiais por mesh + overrides
 
 assets/
 ├── models/
 │   ├── scene.gltf / scene.bin        # Personagem principal
 │   ├── cube.gltf / cube.bin          # Cubo usado como chão
-│   ├── CubeTexture.jpg               # Textura aplicada ao chão
-│   └── Vitalik_edit_2.png            # Textura usada pelo personagem
+│   ├── CubeTexture.jpg               # Textura aplicada ao chão e aos overrides
+│   └── Vitalik_edit_2.png            # Textura original do personagem
 └── shaders/
-    ├── vertex.glsl                       # MVP + dados para os dois tipos de sombra
-    ├── fragment.glsl                     # Phong + sombras direcionais e omnidirecionais
-    ├── directional_depth_vertex.glsl     # Depth-only do passe direcional
-    ├── directional_depth_fragment.glsl   # Fragment shader vazio (depth only)
-    ├── depth_vertex.glsl                 # Vertex do cubemap depth
-    ├── depth_geometry.glsl               # Geometry com 6 shadow matrices
-    └── depth_fragment.glsl               # Grava distância normalizada no cubemap
+    ├── vertex.glsl                       # MVP + dados para shadow mapping
+    ├── fragment.glsl                     # Phong + sombras direcional/omni + materiais
+    ├── directional_depth_vertex.glsl     # Passe de profundidade direcional
+    ├── directional_depth_fragment.glsl   # Fragment shader (depth only)
+    ├── depth_vertex.glsl                 # Vertex para depth cubemap
+    ├── depth_geometry.glsl               # Geometry com 6 matrizes lookAt
+    └── depth_fragment.glsl               # Normaliza a distância no cubemap
 ```
 

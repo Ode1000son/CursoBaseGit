@@ -72,59 +72,34 @@ float CalculateDirectionalShadow(vec4 fragPosLS, vec3 norm, vec3 lightDir)
     return shadow;
 }
 
-/**
- * @brief Calcula sombra omnidirecional usando Point Light Shadow Mapping com PCF 3D
- *
- * Algoritmo: Usa cubemap de profundidade para sombras 360°, calcula distância do fragmento
- * à luz, aplica PCF em 3D com offsets esfericamente distribuídos, e usa disk radius
- * adaptativo baseado na distância para reduzir shadow acne em superfícies distantes.
- *
- * Técnica: Omnidirectional Shadow Mapping com Percentage Closer Filtering volumétrico.
- * O cubemap armazena distâncias normalizadas [0,far_plane] em cada direção da luz.
- *
- * @param fragPosition Posição do fragmento no espaço do mundo
- * @return Fator de sombra [0.0 = totalmente iluminado, 1.0 = totalmente sombreado]
- */
 float CalculatePointShadow(vec3 fragPosition)
 {
-    // Vetor do fragmento para a posição da luz (direção da amostragem no cubemap)
     vec3 fragToLight = fragPosition - pointShadowLightPos;
-    float currentDepth = length(fragToLight); // Distância atual do fragmento à luz
-
-    // Bias fixo para reduzir shadow acne (menor que no directional por ser menos problemático)
+    float currentDepth = length(fragToLight);
     float bias = 0.15;
-    int samples = 20; // Número de amostras para PCF 3D
+    int samples = 20;
     float shadow = 0.0;
 
-    // Distribuição esférica otimizada de offsets para PCF 3D
-    // Inclui: 8 vértices do cubo, 4 arestas do equador, 4 faces laterais, 4 diagonais verticais
     vec3 sampleOffsetDirections[20] = vec3[]
     (
-       vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1), // Vértices superiores
-       vec3( 1,  1, -1), vec3( 1, -1, -1), vec3(-1, -1, -1), vec3(-1,  1, -1), // Vértices inferiores
-       vec3( 1,  1,  0), vec3( 1, -1,  0), vec3(-1, -1,  0), vec3(-1,  1,  0), // Arestas equatoriais
-       vec3( 1,  0,  1), vec3(-1,  0,  1), vec3( 1,  0, -1), vec3(-1,  0, -1), // Arestas longitudinais
-       vec3( 0,  1,  1), vec3( 0, -1,  1), vec3( 0, -1, -1), vec3( 0,  1, -1)  // Arestas latitudinais
+       vec3( 1,  1,  1), vec3( 1, -1,  1), vec3(-1, -1,  1), vec3(-1,  1,  1),
+       vec3( 1,  1, -1), vec3( 1, -1, -1), vec3(-1, -1, -1), vec3(-1,  1, -1),
+       vec3( 1,  1,  0), vec3( 1, -1,  0), vec3(-1, -1,  0), vec3(-1,  1,  0),
+       vec3( 1,  0,  1), vec3(-1,  0,  1), vec3( 1,  0, -1), vec3(-1,  0, -1),
+       vec3( 0,  1,  1), vec3( 0, -1,  1), vec3( 0, -1, -1), vec3( 0,  1, -1)
     );
 
-    // Disk radius adaptativo: aumenta com a distância para compensar precisão reduzida
-    // Fórmula: diskRadius = (1.0 + (distância / far_plane)) / 25.0
-    // Resulta em raio maior para fragmentos distantes, reduzindo shadow acne
     float diskRadius = (1.0 + (currentDepth / shadowFarPlane)) / 25.0;
 
-    // PCF 3D: amostra o cubemap em múltiplas direções ao redor da direção principal
     for (int i = 0; i < samples; ++i) {
-        // Direção amostrada = direção principal + offset esfericamente distribuído
         float closestDepth = texture(pointShadowMap, fragToLight + sampleOffsetDirections[i] * diskRadius).r;
-        closestDepth *= shadowFarPlane; // Converte profundidade normalizada [0,1] para [0,far_plane]
-
-        // Comparação: se distância atual (com bias) > distância armazenada = está em sombra
+        closestDepth *= shadowFarPlane;
         if ((currentDepth - bias) > closestDepth) {
             shadow += 1.0;
         }
     }
 
-    shadow /= float(samples); // Média das amostras para suavização
+    shadow /= float(samples);
     return shadow;
 }
 

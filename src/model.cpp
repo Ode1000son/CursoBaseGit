@@ -6,10 +6,10 @@
 
 Mesh::Mesh(std::vector<Vertex>&& vertices,
            std::vector<unsigned int>&& indices,
-           Texture* diffuseTexture)
+           Material* material)
     : m_vertices(std::move(vertices))
     , m_indices(std::move(indices))
-    , m_diffuseTexture(diffuseTexture)
+    , m_material(material)
     , m_VAO(0)
     , m_VBO(0)
     , m_EBO(0)
@@ -50,11 +50,18 @@ void Mesh::SetupMesh()
     glBindVertexArray(0);
 }
 
-void Mesh::Draw(GLuint fallbackTextureID) const
+void Mesh::Draw(GLuint program, GLuint fallbackTextureID) const
 {
-    if (m_diffuseTexture) {
-        m_diffuseTexture->Bind(GL_TEXTURE0);
-    } else if (fallbackTextureID != 0) {
+    bool hasTextureBound = false;
+    if (m_material) {
+        m_material->Apply(program);
+        if (m_material->HasTexture()) {
+            m_material->BindTexture(GL_TEXTURE0);
+            hasTextureBound = true;
+        }
+    }
+
+    if (!hasTextureBound && fallbackTextureID != 0) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, fallbackTextureID);
     }
@@ -67,6 +74,7 @@ void Mesh::Draw(GLuint fallbackTextureID) const
 bool Model::LoadFromFile(const std::string& filePath)
 {
     m_meshes.clear();
+    m_materials.clear();
     m_ownedTextures.clear();
     m_directory.clear();
 
@@ -93,10 +101,10 @@ bool Model::LoadFromFile(const std::string& filePath)
     return true;
 }
 
-void Model::Draw(GLuint fallbackTextureID) const
+void Model::Draw(GLuint program, GLuint fallbackTextureID) const
 {
     for (const auto& mesh : m_meshes) {
-        mesh->Draw(fallbackTextureID);
+        mesh->Draw(program, fallbackTextureID);
     }
 }
 
@@ -150,13 +158,57 @@ std::unique_ptr<Mesh> Model::ProcessMesh(aiMesh* mesh, const aiScene* scene)
         }
     }
 
-    Texture* diffuseTexture = nullptr;
+    Material* meshMaterial = nullptr;
     if (mesh->mMaterialIndex >= 0) {
         aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
-        diffuseTexture = LoadMaterialTexture(material, aiTextureType_DIFFUSE);
+        auto createdMaterial = CreateMaterial(material);
+        meshMaterial = createdMaterial.get();
+        m_materials.emplace_back(std::move(createdMaterial));
+    } else {
+        auto defaultMaterial = std::make_unique<Material>();
+        meshMaterial = defaultMaterial.get();
+        m_materials.emplace_back(std::move(defaultMaterial));
     }
 
-    return std::make_unique<Mesh>(std::move(vertices), std::move(indices), diffuseTexture);
+    return std::make_unique<Mesh>(std::move(vertices), std::move(indices), meshMaterial);
+}
+
+std::unique_ptr<Material> Model::CreateMaterial(aiMaterial* sourceMaterial)
+{
+    if (!sourceMaterial) {
+        return std::make_unique<Material>();
+    }
+
+    auto toVec3 = [](const aiColor3D& color) {
+        return glm::vec3(color.r, color.g, color.b);
+    };
+
+    glm::vec3 ambient(0.2f);
+    glm::vec3 diffuse(1.0f);
+    glm::vec3 specular(1.0f);
+    aiColor3D tempColor(0.0f, 0.0f, 0.0f);
+
+    if (sourceMaterial->Get(AI_MATKEY_COLOR_AMBIENT, tempColor) == AI_SUCCESS) {
+        ambient = toVec3(tempColor);
+    }
+    if (sourceMaterial->Get(AI_MATKEY_COLOR_DIFFUSE, tempColor) == AI_SUCCESS) {
+        diffuse = toVec3(tempColor);
+    }
+    if (sourceMaterial->Get(AI_MATKEY_COLOR_SPECULAR, tempColor) == AI_SUCCESS) {
+        specular = toVec3(tempColor);
+    }
+
+    float shininess = 32.0f;
+    if (sourceMaterial->Get(AI_MATKEY_SHININESS, shininess) != AI_SUCCESS || shininess <= 0.0f) {
+        shininess = 32.0f;
+    }
+
+    auto material = std::make_unique<Material>(ambient, diffuse, specular, shininess);
+    if (Texture* diffuseTexture = LoadMaterialTexture(sourceMaterial, aiTextureType_DIFFUSE)) {
+        material->SetDiffuseTexture(diffuseTexture);
+    }
+
+    return material;
 }
 
 Texture* Model::LoadMaterialTexture(aiMaterial* material, aiTextureType type)
@@ -194,6 +246,42 @@ Texture* Model::LoadMaterialTexture(aiMaterial* material, aiTextureType type)
     }
 
     return nullptr;
+}
+
+void Model::OverrideAllTextures(Texture* texture)
+{
+    if (!texture) {
+        ClearTextureOverrides();
+        return;
+    }
+
+    for (auto& material : m_materials) {
+        if (material) {
+            material->SetDiffuseOverride(texture);
+        }
+    }
+}
+
+void Model::ClearTextureOverrides()
+{
+    for (auto& material : m_materials) {
+        if (material) {
+            material->ClearDiffuseOverride();
+        }
+    }
+}
+
+void Model::ApplyTextureIfMissing(Texture* texture)
+{
+    if (!texture) {
+        return;
+    }
+
+    for (auto& material : m_materials) {
+        if (material && !material->HasTexture()) {
+            material->SetDiffuseTexture(texture);
+        }
+    }
 }
 
 Texture* Model::LoadTextureFromPath(const std::string& filepath)

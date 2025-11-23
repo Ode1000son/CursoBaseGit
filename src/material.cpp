@@ -29,8 +29,8 @@ void Material::Apply(GLuint program) const
 
 void Material::BindTexture(GLenum textureUnit) const
 {
-    if (m_diffuseTexture) {
-        m_diffuseTexture->Bind(textureUnit);
+    if (Texture* activeTexture = GetActiveTexture()) {
+        activeTexture->Bind(textureUnit);
     } else {
         glActiveTexture(textureUnit);
         glBindTexture(GL_TEXTURE_2D, 0);

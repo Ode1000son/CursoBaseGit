@@ -115,6 +115,88 @@ private:
     }
 };
 
+GLuint CreateSolidColorTexture(const glm::vec4& color)
+{
+    GLuint textureID = 0;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    std::array<unsigned char, 4> pixel{
+        static_cast<unsigned char>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f),
+        static_cast<unsigned char>(glm::clamp(color.a, 0.0f, 1.0f) * 255.0f)
+    };
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixel.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return textureID;
+}
+
+enum class TextureOverrideMode
+{
+    Imported = 0,
+    Checker,
+    Highlight
+};
+
+void ApplyOverrideMode(TextureOverrideMode mode,
+                       Model& characterModel,
+                       Model& floorModel,
+                       Texture* checkerTexture,
+                       Texture* highlightTexture)
+{
+    characterModel.ClearTextureOverrides();
+    floorModel.ClearTextureOverrides();
+
+    auto applyTexture = [&](Texture* texture) {
+        if (texture) {
+            characterModel.OverrideAllTextures(texture);
+            floorModel.OverrideAllTextures(texture);
+        }
+    };
+
+    switch (mode) {
+    case TextureOverrideMode::Checker:
+        applyTexture(checkerTexture);
+        break;
+    case TextureOverrideMode::Highlight:
+        applyTexture(highlightTexture);
+        break;
+    default:
+        break;
+    }
+}
+
+void HandleOverrideShortcuts(GLFWwindow* window,
+                             TextureOverrideMode& currentMode,
+                             Model& characterModel,
+                             Model& floorModel,
+                             Texture* checkerTexture,
+                             Texture* highlightTexture)
+{
+    static bool key1Held = false;
+    static bool key2Held = false;
+    static bool key3Held = false;
+
+    auto handleKey = [&](int key, bool& heldState, TextureOverrideMode mode) {
+        bool isPressed = glfwGetKey(window, key) == GLFW_PRESS;
+        if (isPressed && !heldState && currentMode != mode) {
+            currentMode = mode;
+            ApplyOverrideMode(currentMode, characterModel, floorModel, checkerTexture, highlightTexture);
+        }
+        heldState = isPressed;
+    };
+
+    handleKey(GLFW_KEY_1, key1Held, TextureOverrideMode::Imported);
+    handleKey(GLFW_KEY_2, key2Held, TextureOverrideMode::Checker);
+    handleKey(GLFW_KEY_3, key3Held, TextureOverrideMode::Highlight);
+}
+
 /// @brief Callback chamado quando a janela é redimensionada
 /// @param window Ponteiro para a janela GLFW
 /// @param width Nova largura da janela
@@ -189,8 +271,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 6.2 - Point Light Shadows
-/// Demonstra como gerar shadow maps direcionais e omnidirecionais na mesma cena.
+/// @brief Função principal da Aula 7.1 - Materiais e Texturas
+/// Demonstra carregamento de materiais, múltiplas texturas por mesh e sistema de overrides.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -204,7 +286,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 6.2 - Point Light Shadows", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 7.1 - Materiais e Texturas", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -226,6 +308,7 @@ int main()
     }
 
     glEnable(GL_DEPTH_TEST);
+    const GLuint defaultWhiteTexture = CreateSolidColorTexture(glm::vec4(1.0f));
 
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
@@ -253,29 +336,32 @@ int main()
 
     Texture characterTexture;
     if (!characterTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
-        std::cerr << "Falha ao carregar textura do personagem." << std::endl;
-        return -1;
+        std::cerr << "Falha ao carregar textura do personagem (Vitalik_edit_2.png)." << std::endl;
     }
-
     Texture floorTexture;
     if (!floorTexture.LoadFromFile("assets/models/CubeTexture.jpg")) {
         std::cerr << "Falha ao carregar textura do chão (CubeTexture.jpg)." << std::endl;
-        return -1;
+    }
+    Texture checkerTexture;
+    if (!checkerTexture.LoadFromFile("assets/texture.png")) {
+        std::cerr << "Falha ao carregar textura checker para overrides." << std::endl;
+    }
+    Texture highlightTexture;
+    if (!highlightTexture.LoadFromFile("assets/models/CubeTexture.jpg")) {
+        std::cerr << "Falha ao carregar textura de destaque para overrides." << std::endl;
     }
 
-    Material characterMaterial(
-        glm::vec3(0.35f, 0.35f, 0.35f),
-        glm::vec3(1.0f, 1.0f, 1.0f),
-        glm::vec3(0.9f, 0.9f, 0.9f),
-        32.0f,
-        &characterTexture);
+    if (characterTexture.GetID() != 0) {
+        characterModel.ApplyTextureIfMissing(&characterTexture);
+    }
+    if (floorTexture.GetID() != 0) {
+        floorModel.ApplyTextureIfMissing(&floorTexture);
+    }
 
-    Material floorMaterial(
-        glm::vec3(0.25f, 0.20f, 0.18f),
-        glm::vec3(0.55f, 0.45f, 0.35f),
-        glm::vec3(0.08f, 0.08f, 0.08f),
-        8.0f,
-        &floorTexture);
+    Texture* checkerTexturePtr = checkerTexture.GetID() != 0 ? &checkerTexture : nullptr;
+    Texture* highlightTexturePtr = highlightTexture.GetID() != 0 ? &highlightTexture : nullptr;
+    TextureOverrideMode overrideMode = TextureOverrideMode::Imported;
+    ApplyOverrideMode(overrideMode, characterModel, floorModel, checkerTexturePtr, highlightTexturePtr);
 
     DirectionalLight mainSun{
         glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
@@ -435,6 +521,7 @@ int main()
         lastFrame = currentFrame;
 
         ProcessInput(window, deltaTime);
+        HandleOverrideShortcuts(window, overrideMode, characterModel, floorModel, checkerTexturePtr, highlightTexturePtr);
 
         if (PointLight* caster = pointLights.GetLightMutable(shadowPointIndex)) {
             glm::vec3 orbitOffset(
@@ -488,11 +575,11 @@ int main()
         if (dirDepthModelLoc >= 0) {
             glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
         }
-        floorModel.Draw(0);
+        floorModel.Draw(directionalDepthShader.program, 0);
         if (dirDepthModelLoc >= 0) {
             glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
         }
-        characterModel.Draw(0);
+        characterModel.Draw(directionalDepthShader.program, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, kPointShadowNearPlane, kPointShadowFarPlane);
@@ -523,11 +610,11 @@ int main()
         if (pointDepthModelLoc >= 0) {
             glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
         }
-        floorModel.Draw(0);
+        floorModel.Draw(pointDepthShader.program, 0);
         if (pointDepthModelLoc >= 0) {
             glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
         }
-        characterModel.Draw(0);
+        characterModel.Draw(pointDepthShader.program, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         glViewport(0, 0, viewportWidth, viewportHeight);
@@ -559,15 +646,11 @@ int main()
         directionalLights.Upload(shaderProgram.program, currentFrame);
         pointLights.Upload(shaderProgram.program);
 
-        floorMaterial.Apply(shaderProgram.program);
-        floorMaterial.BindTexture(GL_TEXTURE0);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
-        floorModel.Draw(0);
+        floorModel.Draw(shaderProgram.program, defaultWhiteTexture);
 
-        characterMaterial.Apply(shaderProgram.program);
-        characterMaterial.BindTexture(GL_TEXTURE0);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
-        characterModel.Draw(0);
+        characterModel.Draw(shaderProgram.program, defaultWhiteTexture);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -580,6 +663,7 @@ int main()
     glDeleteTextures(1, &depthMap);
     glDeleteFramebuffers(1, &pointDepthMapFBO);
     glDeleteTextures(1, &pointDepthCubemap);
+    glDeleteTextures(1, &defaultWhiteTexture);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
