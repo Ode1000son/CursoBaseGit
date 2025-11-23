@@ -190,6 +190,9 @@ private:
     float m_pointLightOrbitRadius = 3.8f;
     float m_pointLightVerticalAmplitude = 0.7f;
     glm::vec3 m_shadowLightPos{ 0.0f };
+    float m_pointLightOrbitSpeed = 1.0f;
+    float m_pointLightVerticalFrequency = 0.7f;
+    bool m_shadowLightOrbitEnabled = true;
 
     DirectionalLight m_primarySun{};
 

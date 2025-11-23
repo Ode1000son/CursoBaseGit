@@ -78,6 +78,39 @@ void Camera::ProcessMouseMovement(float xoffset, float yoffset, bool constrainPi
     updateCameraVectors();
 }
 
+void Camera::SetPosition(const glm::vec3& position)
+{
+    m_position = position;
+}
+
+void Camera::SetUp(const glm::vec3& up)
+{
+    m_worldUp = up;
+    updateCameraVectors();
+}
+
+void Camera::SetOrientation(float yaw, float pitch)
+{
+    m_yaw = yaw;
+    m_pitch = pitch;
+    updateCameraVectors();
+}
+
+void Camera::SetMovementSpeed(float speed)
+{
+    m_movementSpeed = speed;
+}
+
+void Camera::SetMouseSensitivity(float sensitivity)
+{
+    m_mouseSensitivity = sensitivity;
+}
+
+void Camera::SetZoom(float zoom)
+{
+    m_zoom = zoom;
+}
+
 /// @brief Atualiza os vetores da câmera (front, right, up) baseado nos ângulos
 void Camera::updateCameraVectors()
 {

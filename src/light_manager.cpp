@@ -27,7 +27,7 @@ void DirectionalLightManager::AddLight(const DirectionalLight& light)
 void DirectionalLightManager::Upload(GLuint program, float time) const
 {
     const GLint directionalCountLoc = glGetUniformLocation(program, "directionalCount");
-    const int count = static_cast<int>(std::min(m_lights.size(), static_cast<size_t>(m_maxLights)));
+    const int count = GetCount();
     glUniform1i(directionalCountLoc, count);
 
     for (int i = 0; i < count; ++i) {
@@ -40,6 +40,16 @@ void DirectionalLightManager::Upload(GLuint program, float time) const
         glUniform3fv(glGetUniformLocation(program, (base + ".diffuse").c_str()), 1, glm::value_ptr(light.diffuse));
         glUniform3fv(glGetUniformLocation(program, (base + ".specular").c_str()), 1, glm::value_ptr(light.specular));
     }
+}
+
+void DirectionalLightManager::Clear()
+{
+    m_lights.clear();
+}
+
+int DirectionalLightManager::GetCount() const
+{
+    return static_cast<int>(std::min(m_lights.size(), static_cast<size_t>(m_maxLights)));
 }
 
 PointLightManager::PointLightManager(int maxLights)
@@ -100,6 +110,11 @@ void PointLightManager::Upload(GLuint program) const
     }
 }
 
+void PointLightManager::Clear()
+{
+    m_lights.clear();
+}
+
 SpotLightManager::SpotLightManager(int maxLights)
     : m_maxLights(maxLights)
 {}
@@ -145,5 +160,10 @@ void SpotLightManager::Upload(GLuint program) const
         glUniform1f(glGetUniformLocation(program, (base + ".quadratic").c_str()), light.quadratic);
         glUniform1f(glGetUniformLocation(program, (base + ".range").c_str()), light.range);
     }
+}
+
+void SpotLightManager::Clear()
+{
+    m_lights.clear();
 }
 

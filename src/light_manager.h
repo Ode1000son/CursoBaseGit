@@ -54,6 +54,8 @@ public:
 
     void AddLight(const DirectionalLight& light);
     void Upload(GLuint program, float time) const;
+    void Clear();
+    int GetCount() const;
 
 private:
     int m_maxLights;
@@ -70,6 +72,7 @@ public:
     const PointLight* GetLight(int index) const;
     int GetCount() const;
     void Upload(GLuint program) const;
+    void Clear();
 
 private:
     int m_maxLights;
@@ -84,6 +87,7 @@ public:
     int AddLight(const SpotLight& light);
     SpotLight* GetLightMutable(int index);
     void Upload(GLuint program) const;
+    void Clear();
 
 private:
     int m_maxLights;

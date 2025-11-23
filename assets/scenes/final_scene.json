@@ -1,0 +1,113 @@
+﻿{
+    "version": 1,
+    "camera": {
+        "position": { "x": -2.75, "y": 2.35, "z": 5.2 },
+        "up": { "x": 0.0, "y": 1.0, "z": 0.0 },
+        "yaw": -110.0,
+        "pitch": -18.0,
+        "movementSpeed": 3.8,
+        "mouseSensitivity": 0.12,
+        "zoom": 60.0
+    },
+    "objects": [
+        {
+            "name": "Floor",
+            "model": "Floor",
+            "transform": {
+                "position": { "x": 0.0, "y": -0.15, "z": 0.0 },
+                "rotation": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                "scale": { "x": 10.0, "y": 0.2, "z": 10.0 }
+            }
+        },
+        {
+            "name": "HeroFish",
+            "model": "FishLOD0",
+            "role": "hero",
+            "transform": {
+                "position": { "x": 0.0, "y": 0.2, "z": 0.0 },
+                "rotation": { "x": 0.0, "y": -90.0, "z": 0.0 },
+                "scale": { "x": 0.8, "y": 0.8, "z": 0.8 }
+            },
+            "lods": [
+                { "model": "FishLOD0", "maxDistance": 10.0 },
+                { "model": "FishLOD1", "maxDistance": 18.0 },
+                { "model": "FishLOD2", "maxDistance": 28.0 },
+                { "model": "FishLOD3", "maxDistance": 40.0 },
+                { "model": "FishLOD4", "maxDistance": 55.0 },
+                { "model": "FishLOD5", "maxDistance": 9999.0 }
+            ]
+        },
+        {
+            "name": "Car",
+            "model": "Car",
+            "role": "vehicle",
+            "transform": {
+                "position": { "x": 2.5, "y": -0.05, "z": -2.5 },
+                "rotation": { "x": 0.0, "y": 90.0, "z": 0.0 },
+                "scale": { "x": 0.9, "y": 0.9, "z": 0.9 }
+            }
+        }
+    ],
+    "instancedBatches": [
+        {
+            "name": "CoralRing",
+            "model": "Pillar",
+            "rings": 5,
+            "instancesPerRing": 28,
+            "radiusStart": 6.5,
+            "radiusStep": 0.7,
+            "heightBase": -0.12,
+            "heightStep": 0.03,
+            "scaleBase": 0.18,
+            "scaleStep": 0.02,
+            "heightScaleBase": 2.5,
+            "heightScaleStep": 0.4,
+            "twistMultiplier": 1.3
+        }
+    ],
+    "lighting": {
+        "directional": [
+            {
+                "direction": { "x": -0.4, "y": -1.0, "z": -0.3 },
+                "ambient":   { "x": 0.25, "y": 0.22, "z": 0.20 },
+                "diffuse":   { "x": 0.9,  "y": 0.85, "z": 0.8 },
+                "specular":  { "x": 1.0,  "y": 1.0,  "z": 1.0 }
+            },
+            {
+                "direction": { "x": 0.3, "y": -1.0, "z": 0.15 },
+                "ambient":   { "x": 0.02, "y": 0.02, "z": 0.03 },
+                "diffuse":   { "x": 0.35, "y": 0.4,  "z": 0.55 },
+                "specular":  { "x": 0.25, "y": 0.3, "z": 0.45 }
+            }
+        ],
+        "point": [
+            {
+                "position": { "x": 0.0, "y": 2.8, "z": 0.0 },
+                "ambient":  { "x": 0.03, "y": 0.03, "z": 0.03 },
+                "diffuse":  { "x": 1.0,  "y": 0.85, "z": 0.6 },
+                "specular": { "x": 1.0,  "y": 0.95, "z": 0.9 },
+                "linear": 0.09,
+                "quadratic": 0.032,
+                "range": 18.0,
+                "castsShadows": true,
+                "orbit": {
+                    "enabled": true,
+                    "center": { "x": 0.0, "y": 1.8, "z": 0.0 },
+                    "radius": 3.8,
+                    "speed": 1.0,
+                    "verticalAmplitude": 0.7,
+                    "verticalFrequency": 0.7
+                }
+            },
+            {
+                "position": { "x": -3.0, "y": 3.5, "z": -2.0 },
+                "ambient":  { "x": 0.04, "y": 0.05, "z": 0.06 },
+                "diffuse":  { "x": 0.55, "y": 0.65, "z": 1.0 },
+                "specular": { "x": 0.35, "y": 0.4,  "z": 0.55 },
+                "linear": 0.14,
+                "quadratic": 0.07,
+                "range": 12.0
+            }
+        ]
+    }
+}

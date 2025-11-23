@@ -615,43 +615,110 @@ void Renderer::DestroyFullscreenQuad()
 
 void Renderer::SetupLights()
 {
-    m_primarySun = {
-        glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
-        glm::vec3(0.25f, 0.22f, 0.20f),
-        glm::vec3(0.9f, 0.85f, 0.8f),
-        glm::vec3(1.0f),
-        false,
-        glm::vec3(0.0f),
-        0.0f
-    };
+    m_directionalLights.Clear();
+    m_pointLights.Clear();
+    m_shadowPointIndex = -1;
+    m_shadowLightPos = glm::vec3(0.0f);
+    m_shadowLightOrbitEnabled = false;
+    m_pointLightOrbitSpeed = 1.0f;
+    m_pointLightVerticalFrequency = 0.7f;
 
-    m_directionalLights.AddLight(m_primarySun);
-    m_directionalLights.AddLight({ glm::normalize(glm::vec3(0.3f, -1.0f, 0.15f)),
-                                   glm::vec3(0.02f, 0.02f, 0.03f),
-                                   glm::vec3(0.35f, 0.4f, 0.55f),
-                                   glm::vec3(0.25f, 0.3f, 0.45f),
-                                   false });
+    bool primaryAssigned = false;
+    if (m_scene != nullptr)
+    {
+        const SceneLightingSetup& lighting = m_scene->GetLightingSetup();
+        for (const auto& light : lighting.directionalLights)
+        {
+            m_directionalLights.AddLight(light);
+            if (!primaryAssigned)
+            {
+                m_primarySun = light;
+                primaryAssigned = true;
+            }
+        }
 
-    m_shadowPointIndex = m_pointLights.AddLight({
-        glm::vec3(0.0f, 2.8f, 0.0f),
-        glm::vec3(0.03f, 0.03f, 0.03f),
-        glm::vec3(1.0f, 0.85f, 0.6f),
-        glm::vec3(1.0f, 0.95f, 0.9f),
-        1.0f,
-        0.09f,
-        0.032f,
-        18.0f
-    });
-    m_pointLights.AddLight({
-        glm::vec3(-3.0f, 3.5f, -2.0f),
-        glm::vec3(0.04f, 0.05f, 0.06f),
-        glm::vec3(0.55f, 0.65f, 1.0f),
-        glm::vec3(0.35f, 0.40f, 0.55f),
-        1.0f,
-        0.14f,
-        0.07f,
-        12.0f
-    });
+        for (const auto& pointDefinition : lighting.pointLights)
+        {
+            const int index = m_pointLights.AddLight(pointDefinition.light);
+            if (index >= 0 && pointDefinition.castsShadows && m_shadowPointIndex < 0)
+            {
+                m_shadowPointIndex = index;
+                m_shadowLightPos = pointDefinition.light.position;
+                m_shadowLightOrbitEnabled = pointDefinition.orbit.enabled;
+                if (pointDefinition.orbit.enabled)
+                {
+                    m_pointLightOrbitCenter = pointDefinition.orbit.center;
+                    m_pointLightOrbitRadius = pointDefinition.orbit.radius;
+                    m_pointLightOrbitSpeed = pointDefinition.orbit.speed;
+                    m_pointLightVerticalAmplitude = pointDefinition.orbit.verticalAmplitude;
+                    m_pointLightVerticalFrequency = pointDefinition.orbit.verticalFrequency;
+                }
+                else
+                {
+                    m_pointLightOrbitCenter = pointDefinition.light.position;
+                    m_pointLightVerticalAmplitude = 0.0f;
+                    m_pointLightOrbitRadius = 0.0f;
+                    m_pointLightOrbitSpeed = 0.0f;
+                    m_pointLightVerticalFrequency = 0.0f;
+                }
+            }
+        }
+    }
+
+    if (m_directionalLights.GetCount() == 0)
+    {
+        m_primarySun = {
+            glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
+            glm::vec3(0.25f, 0.22f, 0.20f),
+            glm::vec3(0.9f, 0.85f, 0.8f),
+            glm::vec3(1.0f),
+            false,
+            glm::vec3(0.0f),
+            0.0f
+        };
+        m_directionalLights.AddLight(m_primarySun);
+        m_directionalLights.AddLight({ glm::normalize(glm::vec3(0.3f, -1.0f, 0.15f)),
+                                       glm::vec3(0.02f, 0.02f, 0.03f),
+                                       glm::vec3(0.35f, 0.4f, 0.55f),
+                                       glm::vec3(0.25f, 0.3f, 0.45f),
+                                       false });
+    }
+
+    if (m_shadowPointIndex < 0)
+    {
+        PointLight caster{
+            glm::vec3(0.0f, 2.8f, 0.0f),
+            glm::vec3(0.03f, 0.03f, 0.03f),
+            glm::vec3(1.0f, 0.85f, 0.6f),
+            glm::vec3(1.0f, 0.95f, 0.9f),
+            1.0f,
+            0.09f,
+            0.032f,
+            18.0f
+        };
+        m_shadowPointIndex = m_pointLights.AddLight(caster);
+        m_shadowLightPos = caster.position;
+        m_shadowLightOrbitEnabled = true;
+        m_pointLightOrbitCenter = glm::vec3(0.0f, 1.8f, 0.0f);
+        m_pointLightOrbitRadius = 3.8f;
+        m_pointLightVerticalAmplitude = 0.7f;
+        m_pointLightOrbitSpeed = 1.0f;
+        m_pointLightVerticalFrequency = 0.7f;
+    }
+
+    if (m_pointLights.GetCount() < 2)
+    {
+        m_pointLights.AddLight({
+            glm::vec3(-3.0f, 3.5f, -2.0f),
+            glm::vec3(0.04f, 0.05f, 0.06f),
+            glm::vec3(0.55f, 0.65f, 1.0f),
+            glm::vec3(0.35f, 0.40f, 0.55f),
+            1.0f,
+            0.14f,
+            0.07f,
+            12.0f
+        });
+    }
 }
 
 bool Renderer::SetupShadowResources()
@@ -718,11 +785,16 @@ void Renderer::UpdateOrbitingPointLight(float currentTime)
 {
     if (PointLight* caster = m_pointLights.GetLightMutable(m_shadowPointIndex))
     {
-        glm::vec3 orbitOffset(
-            std::cos(currentTime) * m_pointLightOrbitRadius,
-            m_pointLightVerticalAmplitude * std::sin(currentTime * 0.7f),
-            std::sin(currentTime) * m_pointLightOrbitRadius);
-        caster->position = m_pointLightOrbitCenter + orbitOffset;
+        if (m_shadowLightOrbitEnabled)
+        {
+            const float orbitAngle = currentTime * m_pointLightOrbitSpeed;
+            const float verticalAngle = currentTime * m_pointLightVerticalFrequency;
+            glm::vec3 orbitOffset(
+                std::cos(orbitAngle) * m_pointLightOrbitRadius,
+                m_pointLightVerticalAmplitude * std::sin(verticalAngle),
+                std::sin(orbitAngle) * m_pointLightOrbitRadius);
+            caster->position = m_pointLightOrbitCenter + orbitOffset;
+        }
         m_shadowLightPos = caster->position;
     }
     else

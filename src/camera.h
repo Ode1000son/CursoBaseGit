@@ -37,6 +37,14 @@ public:
     glm::vec3 GetFront() const { return m_front; }
     float GetZoom() const { return m_zoom; }
 
+    // === CONFIGURAÇÃO DINÂMICA ===
+    void SetPosition(const glm::vec3& position);
+    void SetUp(const glm::vec3& up);
+    void SetOrientation(float yaw, float pitch);
+    void SetMovementSpeed(float speed);
+    void SetMouseSensitivity(float sensitivity);
+    void SetZoom(float zoom);
+
 private:
     // === VETORES DA CÂMERA ===
     glm::vec3 m_position;    // Posição da câmera no espaço 3D

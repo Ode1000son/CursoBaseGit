@@ -88,6 +88,14 @@ bool Application::Initialize()
     }
     m_renderer.SetWindowTitleBase(m_config.title);
 
+    const SceneCameraSettings& cameraSettings = m_scene.GetCameraSettings();
+    m_camera.SetPosition(cameraSettings.position);
+    m_camera.SetUp(cameraSettings.up);
+    m_camera.SetOrientation(cameraSettings.yaw, cameraSettings.pitch);
+    m_camera.SetMovementSpeed(cameraSettings.movementSpeed);
+    m_camera.SetMouseSensitivity(cameraSettings.mouseSensitivity);
+    m_camera.SetZoom(cameraSettings.zoom);
+
     m_inputController.Initialize(&m_camera);
     m_inputController.AttachWindow(m_window);
 

@@ -15,7 +15,7 @@ struct ApplicationConfig
 {
     int width = 1280;
     int height = 720;
-    const char* title = "Aula 9.2 - Debugging e Profiling";
+    const char* title = "Aula 10.1 - Engine Completa";
 };
 
 class Application
