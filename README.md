@@ -1,24 +1,19 @@
-# Aula 8.3 – Separação de Cena e Entry Point
+# Aula 8.4 – Application Host e Input Layer
 
-Terceira aula do módulo de renderização avançada. Evoluímos a arquitetura modular da Aula 8.2 criando uma camada explícita de **Scene management** e transformando o `main.cpp` em um entry point puro que apenas inicializa o ambiente, direciona a entrada e chama o renderer. Agora o código segue ainda mais de perto os princípios da engine **ultraMini**: cada subsistema conhece somente a sua responsabilidade e expõe interfaces plug-and-play.
+Quarta aula do módulo de renderização avançada. Depois de separar `Scene` e `Renderer`, agora extraímos tudo o que ainda restava no `main.cpp` para uma camada de **Application Host**: inicialização/loop da engine, gerenciamento de entrada e controles de debug viraram módulos dedicados. O entry point ficou reduzido a criar `Application` e chamar `Run()`, exatamente como em uma engine profissional.
 
 ## Objetivos
-- **Scene class dedicada**: toda a lógica de carregamento de modelos, criação dos objetos da cena e animações vive em `scene.h/.cpp`.
-- **Renderer desacoplado**: `Renderer::Initialize(Scene*)` recebe uma cena já preparada e foca exclusivamente em recursos de GPU, pós-processamento e iluminação.
-- **Main enxuto**: `main.cpp` apenas configura GLFW/GLAD, cria `Scene`, `Renderer` e executa o loop chamando `RenderFrame`.
-- **Encapsulamento total**: overrides de textura, animações, modelos e luzes ficam escondidos atrás de APIs simples, permitindo trocar a aplicação sem mexer na engine.
+- **Application host**: classe `Application` responsável por inicializar GLFW/GLAD, criar a janela, coordenar `Scene`, `Renderer` e gerenciar o loop principal.
+- **InputController**: componente independente que trata teclado/mouse, captura FPS quando o botão direito está pressionado e expõe apenas `ProcessInput`.
+- **RendererController**: controla atalhos de depuração (`1/2/3`) desacoplados do renderer.
+- **Main mínimo**: `main.cpp` apenas instancia `Application` com uma configuração e chama `Run()`.
 
 ## Conteúdo Abordado
-- **`scene.{h,cpp}`**: define `SceneObject`, `SceneObjectTransform` e `Scene`, cuidando de:
-  - Carregar modelos e texturas.
-  - Construir o scene graph (chão, personagem, carro).
-  - Atualizar animações de cada objeto em `Scene::Update`.
-  - Expor apenas ponteiros para os modelos necessários ao renderer.
-- **`renderer.{h,cpp}`**: passou a depender apenas da interface da cena. Toda a montagem de framebuffers, MRT e passes de sombra permanece igual, mas agora recebe o estado da cena por parâmetro.
-- **`main.cpp` refatorado**: virou entry point puro, responsável por:
-  - Inicializar GLFW/GLAD.
-  - Criar `Scene` + `Renderer`.
-  - Encaminhar entrada (teclado/mouse) e atalhos de override para o renderer.
+- **`application.{h,cpp}`**: encapsula todo o ciclo de vida (Initialize, Run, Shutdown), além de manter instâncias de `Camera`, `Scene`, `Renderer`, `InputController` e `RendererController`.
+- **`input_controller.{h,cpp}`**: registra callbacks no GLFW, lida com estado do mouse e traduz eventos em chamadas da câmera.
+- **`renderer_controller.{h,cpp}`**: monitora teclas `1/2/3` e chama `Renderer::SetOverrideMode`.
+- **`main.cpp`**: reduzido a 7 linhas, mantendo o entry point puro.
+- **Demais módulos** (`scene`, `renderer`, `camera`, etc.) seguem reaproveitados da Aula 8.3 sem duplicação de lógica.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -38,7 +33,9 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                   # Entry point puro + roteamento de entrada
+├── application.{h,cpp}        # Host do loop + inicialização/encerramento
+├── input_controller.{h,cpp}   # Teclado/mouse desacoplados
+├── renderer_controller.{h,cpp}# Atalhos de depuração do renderer
 ├── scene.{h,cpp}              # Scene graph, assets e animações
 ├── renderer.{h,cpp}           # Renderer plug-and-play (sombras + MRT + pós)
 ├── camera.{h,cpp}
