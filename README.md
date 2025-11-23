@@ -1,15 +1,13 @@
-# Aula 4.2 – Materiais e Propriedades
+# Aula 5.1 – Directional Lights
 
-Segunda entrega do módulo de iluminação. Evoluímos o projeto anterior para tratar um **sistema de materiais**: cada objeto define suas próprias componentes ambiente/difusa/especular e fator de brilho (shininess). Com isso, o personagem mantém a aparência realista enquanto o chão recebe uma coloração personalizada sobre a textura `CubeTexture.jpg`.
+Primeira aula do módulo de iluminação avançada. Mantivemos a base da Aula 4.2 (materiais e texturas), mas agora passamos a controlar **múltiplas luzes direcionais** via arrays de uniforms. Cada luz possui direção, cores (ambient/diffuse/specular) e comportamento próprio (algumas animadas) e todas contribuem para o resultado final no fragment shader.
 
 ## Conteúdo Abordado
-- **Shader Phong com Materiais**: Struct `Material` agora possui ambient/diffuse/specular independentes, modulando o resultado junto à textura.
-- **Materiais Múltiplos**: Personagem e chão aplicam conjuntos distintos de cores/shine para evidenciar superfícies diferentes.
-- **Variação Dinâmica do Vetor de Luz**: A direção da luz gira suavemente, evidenciando o efeito especular conforme a câmera se move.
-- **Transformação Correta de Normais**: Vertex shader normaliza o resultado de `mat3(transpose(inverse(model))) * normal`.
-- **Assimp + Texturas**: Reaproveitamos a infraestrutura de `Model/Mesh` + texturas já carregadas.
-- **Plano de Referência Colorido**: O cubo importado (`cube.gltf`) é escalado/texturizado e recebe um material em tons quentes para destacar especularidade do piso.
-- **Controles FPS**: Mesmo sistema de navegação da Aula 2.2 para inspecionar o personagem em 3D.
+- **Arrays de Luzes Direcionais**: Struct `DirectionalLight` no shader e upload dinâmico no C++ (até 4 luzes).
+- **Gerenciador de Luzes**: Classe `DirectionalLightManager` centraliza configuração/animação das luzes e sincroniza com o shader.
+- **Shader Modular**: Função `CalculateDirectionalLight` soma a contribuição de cada luz.
+- **Materiais Reutilizáveis**: Classe `Material` continua encapsulando parâmetros + texturas (personagem x chão).
+- **Câmera FPS + Cena Completa**: Mesmo setup de navegação/Assimp, agora com iluminação multi-fonte.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -26,11 +24,12 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp          # Configuração do contexto, shaders e render loop (modelo 3D)
-├── camera.{h,cpp}    # Sistema de câmera FPS
-├── texture.{h,cpp}   # Carregamento e gerenciamento de texturas (stb_image)
-├── material.{h,cpp}  # Classe Material com cores/shine e binding de textura
-├── model.{h,cpp}     # Carregamento Assimp + gerenciamento de meshes
+├── main.cpp                 # Configuração do contexto, shaders e render loop (modelo 3D)
+├── camera.{h,cpp}           # Sistema de câmera FPS
+├── texture.{h,cpp}          # Carregamento e gerenciamento de texturas (stb_image)
+├── material.{h,cpp}         # Classe Material com cores/shine e binding de textura
+├── directional_light_manager.{h,cpp} # Gerenciamento e upload das luzes direcionais
+├── model.{h,cpp}            # Carregamento Assimp + gerenciamento de meshes
 
 assets/
 ├── models/

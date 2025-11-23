@@ -5,12 +5,17 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <fstream>
+#include <algorithm>
 #include <sstream>
 #include <string>
+#include <vector>
 #include "camera.h"
 #include "texture.h"
 #include "model.h"
 #include "material.h"
+#include "light_manager.h"
+
+constexpr int kMaxDirectionalLights = 4;
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -88,6 +93,17 @@ private:
 
         return shader;
     }
+};
+
+struct DirectionalLightConfig
+{
+    glm::vec3 direction;
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 specular;
+    bool animated = false;
+    glm::vec3 animationAxis{ 0.0f, 1.0f, 0.0f };
+    float animationSpeed = 0.0f;
 };
 
 /// @brief Callback chamado quando a janela é redimensionada
@@ -244,10 +260,6 @@ int main()
                                            0.1f,
                                            100.0f);
 
-    const glm::vec3 lightAmbient(0.18f, 0.18f, 0.22f);
-    const glm::vec3 lightDiffuse(0.85f, 0.85f, 0.9f);
-    const glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
-
     Material characterMaterial(
         glm::vec3(0.35f, 0.35f, 0.35f),
         glm::vec3(1.0f, 1.0f, 1.0f),
@@ -262,6 +274,25 @@ int main()
         8.0f,
         &floorTexture);
 
+    DirectionalLightManager directionalLights(kMaxDirectionalLights);
+    directionalLights.AddLight({ glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
+                                 glm::vec3(0.25f, 0.22f, 0.20f),
+                                 glm::vec3(0.9f, 0.85f, 0.8f),
+                                 glm::vec3(1.0f),
+                                 true,
+                                 glm::vec3(0.0f, 1.0f, 0.0f),
+                                 0.35f });
+    directionalLights.AddLight({ glm::normalize(glm::vec3(0.35f, -1.0f, 0.2f)),
+                                 glm::vec3(0.05f, 0.05f, 0.08f),
+                                 glm::vec3(0.3f, 0.35f, 0.5f),
+                                 glm::vec3(0.35f, 0.4f, 0.55f),
+                                 false });
+    directionalLights.AddLight({ glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f)),
+                                 glm::vec3(0.02f, 0.02f, 0.02f),
+                                 glm::vec3(0.18f, 0.12f, 0.08f),
+                                 glm::vec3(0.05f, 0.05f, 0.05f),
+                                 false });
+
     glEnable(GL_DEPTH_TEST);
 
     shaderProgram.Use();
@@ -270,15 +301,8 @@ int main()
     const GLint projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
     const GLint viewPosLoc = glGetUniformLocation(shaderProgram.program, "viewPos");
     const GLint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
-    const GLint lightDirectionLoc = glGetUniformLocation(shaderProgram.program, "light.direction");
-    const GLint lightAmbientLoc = glGetUniformLocation(shaderProgram.program, "light.ambient");
-    const GLint lightDiffuseLoc = glGetUniformLocation(shaderProgram.program, "light.diffuse");
-    const GLint lightSpecularLoc = glGetUniformLocation(shaderProgram.program, "light.specular");
 
     glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    glUniform3fv(lightAmbientLoc, 1, glm::value_ptr(lightAmbient));
-    glUniform3fv(lightDiffuseLoc, 1, glm::value_ptr(lightDiffuse));
-    glUniform3fv(lightSpecularLoc, 1, glm::value_ptr(lightSpecular));
     glUniform1i(samplerLoc, 0);
 
     // === LOOP PRINCIPAL DA APLICAÇÃO ===
@@ -305,16 +329,10 @@ int main()
 
         glm::mat4 view = camera.GetViewMatrix();
 
-        const glm::vec3 animatedLightDir = glm::normalize(glm::vec3(
-            std::sin(currentFrame * 0.35f),
-            -1.0f,
-            std::cos(currentFrame * 0.35f)
-        ));
-
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniform3fv(lightDirectionLoc, 1, glm::value_ptr(animatedLightDir));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        directionalLights.Upload(shaderProgram.program, currentFrame);
 
         // === DESENHA O CHÃO ===
         floorMaterial.Apply(shaderProgram.program);
