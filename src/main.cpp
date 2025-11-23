@@ -16,6 +16,7 @@
 #include "light_manager.h"
 
 constexpr int kMaxDirectionalLights = 4;
+constexpr int kMaxPointLights = 4;
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -95,17 +96,6 @@ private:
     }
 };
 
-struct DirectionalLightConfig
-{
-    glm::vec3 direction;
-    glm::vec3 ambient;
-    glm::vec3 diffuse;
-    glm::vec3 specular;
-    bool animated = false;
-    glm::vec3 animationAxis{ 0.0f, 1.0f, 0.0f };
-    float animationSpeed = 0.0f;
-};
-
 /// @brief Callback chamado quando a janela é redimensionada
 /// @param window Ponteiro para a janela GLFW
 /// @param width Nova largura da janela
@@ -180,8 +170,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 4.2 - Materiais e Propriedades
-/// Demonstra como controlar materiais (ambient/diffuse/specular/shininess) para múltiplos objetos usando Phong lighting.
+/// @brief Função principal da Aula 5.2 - Point Lights
+/// Demonstra como combinar múltiplas luzes direcionais e pontuais com materiais reutilizáveis.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -198,7 +188,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 4.2 - Materiais e Propriedades", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 5.2 - Point Lights", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -293,6 +283,32 @@ int main()
                                  glm::vec3(0.05f, 0.05f, 0.05f),
                                  false });
 
+    PointLightManager pointLights(kMaxPointLights);
+    pointLights.AddLight({ glm::vec3(1.8f, 1.5f, 2.2f),
+                           glm::vec3(0.04f, 0.04f, 0.04f),
+                           glm::vec3(1.0f, 0.83f, 0.62f),
+                           glm::vec3(1.0f, 0.95f, 0.85f),
+                           1.0f,
+                           0.07f,
+                           0.017f,
+                           18.0f });
+    pointLights.AddLight({ glm::vec3(-2.5f, 1.2f, -1.8f),
+                           glm::vec3(0.03f, 0.03f, 0.05f),
+                           glm::vec3(0.45f, 0.55f, 1.0f),
+                           glm::vec3(0.6f, 0.7f, 1.0f),
+                           1.0f,
+                           0.09f,
+                           0.032f,
+                           12.0f });
+    pointLights.AddLight({ glm::vec3(0.0f, 3.0f, 0.0f),
+                           glm::vec3(0.06f, 0.06f, 0.06f),
+                           glm::vec3(0.9f, 0.9f, 0.9f),
+                           glm::vec3(1.0f),
+                           1.0f,
+                           0.05f,
+                           0.007f,
+                           24.0f });
+
     glEnable(GL_DEPTH_TEST);
 
     shaderProgram.Use();
@@ -333,6 +349,7 @@ int main()
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
         directionalLights.Upload(shaderProgram.program, currentFrame);
+        pointLights.Upload(shaderProgram.program);
 
         // === DESENHA O CHÃO ===
         floorMaterial.Apply(shaderProgram.program);

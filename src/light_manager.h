@@ -20,6 +20,18 @@ struct DirectionalLight
     glm::vec3 GetDirection(float time) const;
 };
 
+struct PointLight
+{
+    glm::vec3 position;
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 specular;
+    float constant = 1.0f;
+    float linear = 0.09f;
+    float quadratic = 0.032f;
+    float range = 10.0f;
+};
+
 class DirectionalLightManager
 {
 public:
@@ -31,5 +43,18 @@ public:
 private:
     int m_maxLights;
     std::vector<DirectionalLight> m_lights;
+};
+
+class PointLightManager
+{
+public:
+    explicit PointLightManager(int maxLights);
+
+    void AddLight(const PointLight& light);
+    void Upload(GLuint program) const;
+
+private:
+    int m_maxLights;
+    std::vector<PointLight> m_lights;
 };
 

@@ -1,13 +1,12 @@
-# Aula 5.1 – Directional Lights
+# Aula 5.2 – Point Lights
 
-Primeira aula do módulo de iluminação avançada. Mantivemos a base da Aula 4.2 (materiais e texturas), mas agora passamos a controlar **múltiplas luzes direcionais** via arrays de uniforms. Cada luz possui direção, cores (ambient/diffuse/specular) e comportamento próprio (algumas animadas) e todas contribuem para o resultado final no fragment shader.
+Sequência direta da etapa de luzes direcionais. Mantivemos toda a base de materiais/cena e adicionamos um sistema completo de **luzes pontuais com atenuação, falloff por distância e limite de alcance configurável**. Cada luz possui posição, cores e coeficientes (constant/linear/quadratic + range) que definem o comportamento da intensidade.
 
 ## Conteúdo Abordado
-- **Arrays de Luzes Direcionais**: Struct `DirectionalLight` no shader e upload dinâmico no C++ (até 4 luzes).
-- **Gerenciador de Luzes**: Classe `DirectionalLightManager` centraliza configuração/animação das luzes e sincroniza com o shader.
-- **Shader Modular**: Função `CalculateDirectionalLight` soma a contribuição de cada luz.
-- **Materiais Reutilizáveis**: Classe `Material` continua encapsulando parâmetros + texturas (personagem x chão).
-- **Câmera FPS + Cena Completa**: Mesmo setup de navegação/Assimp, agora com iluminação multi-fonte.
+- **Estruturas paralelas de iluminação**: `DirectionalLightManager` continua ativo e o novo `PointLightManager` sincroniza posições e cores das luzes pontuais.
+- **Modelo de atenuação física**: shader usa o trio constant/linear/quadratic combinado com o fator de range para cortar a luz fora do raio útil.
+- **Funções modulares**: `CalculateDirectionalLight` e `CalculatePointLight` permitem combinar múltiplos tipos de luz sem duplicar lógica.
+- **Cena reutilizada**: mesmos materiais, câmera e modelos da aula anterior garantem foco exclusivo no comportamento das luzes.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -24,22 +23,21 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                 # Configuração do contexto, shaders e render loop (modelo 3D)
+├── main.cpp                 # Configuração do contexto, upload das luzes e render loop
 ├── camera.{h,cpp}           # Sistema de câmera FPS
-├── texture.{h,cpp}          # Carregamento e gerenciamento de texturas (stb_image)
+├── texture.{h,cpp}          # Carregamento/gerenciamento de texturas (stb_image)
 ├── material.{h,cpp}         # Classe Material com cores/shine e binding de textura
-├── directional_light_manager.{h,cpp} # Gerenciamento e upload das luzes direcionais
+├── light_manager.{h,cpp}    # Gerencia arrays de luzes direcionais e pontuais
 ├── model.{h,cpp}            # Carregamento Assimp + gerenciamento de meshes
 
 assets/
 ├── models/
-│   ├── scene.gltf          # Modelo glTF importado
-│   ├── scene.bin           # Buffers do glTF
+│   ├── scene.gltf / scene.bin        # Personagem principal
 │   ├── cube.gltf / cube.bin          # Cubo usado como chão
-│   ├── CubeTexture.jpg               # Textura aplicada ao chão (recebe cor adicional do material)
+│   ├── CubeTexture.jpg               # Textura aplicada ao chão
 │   └── Vitalik_edit_2.png            # Textura usada pelo personagem
 └── shaders/
-    ├── vertex.glsl   # Atributos completos + normal matrix normalizada
-    └── fragment.glsl # Implementação do modelo de iluminação Phong com materiais
+    ├── vertex.glsl   # Normal matrix correta
+    └── fragment.glsl # Phong com direcionais + pontuais e falloff por range
 ```
 
