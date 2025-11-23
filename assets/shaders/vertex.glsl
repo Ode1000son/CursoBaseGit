@@ -9,11 +9,13 @@ layout (location = 2) in vec2 aTexCoord;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+uniform mat4 lightSpaceMatrix;
 
 // Dados enviados ao fragment shader
 out vec3 fragPos;
 out vec3 normal;
 out vec2 texCoord;
+out vec4 fragPosLightSpace;
 
 void main()
 {
@@ -24,5 +26,6 @@ void main()
     normal = normalize(mat3(transpose(inverse(model))) * aNormal);
 
     texCoord = aTexCoord;
+    fragPosLightSpace = lightSpaceMatrix * worldPosition;
     gl_Position = projection * view * worldPosition;
 }

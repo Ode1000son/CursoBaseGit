@@ -16,8 +16,10 @@
 #include "light_manager.h"
 
 constexpr int kMaxDirectionalLights = 4;
-constexpr int kMaxPointLights = 4;
-constexpr int kMaxSpotLights = 4;
+constexpr unsigned int kShadowMapWidth = 2048;
+constexpr unsigned int kShadowMapHeight = 2048;
+constexpr float kShadowNearPlane = 1.0f;
+constexpr float kShadowFarPlane = 60.0f;
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -171,25 +173,22 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 5.3 - Spot Lights
-/// Demonstra como combinar luzes direcionais, pontuais e cônicas (spots) usando materiais reutilizáveis.
+/// @brief Função principal da Aula 6.1 - Shadow Mapping Direcional
+/// Demonstra como gerar um depth map direcional e utilizá-lo no passe de iluminação principal.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
-    // === INICIALIZAÇÃO DO GLFW ===
     if (!glfwInit())
     {
         std::cerr << "Falha ao inicializar GLFW" << std::endl;
         return -1;
     }
 
-    // === CONFIGURAÇÃO DO CONTEXTO OPENGL ===
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 5.3 - Spot Lights", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 6.1 - Shadow Mapping Direcional", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -197,16 +196,11 @@ int main()
         return -1;
     }
 
-    // === CONFIGURAÇÃO DO CONTEXTO ===
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
-
-    // === CONFIGURAÇÃO DO MOUSE ===
-    // Cursor normal inicialmente (só captura com botão direito)
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     glfwSetCursorPosCallback(window, MouseCallback);
 
-    // === INICIALIZAÇÃO DO GLAD ===
     if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
     {
         std::cerr << "Falha ao inicializar GLAD" << std::endl;
@@ -215,11 +209,15 @@ int main()
         return -1;
     }
 
-    // === CRIAÇÃO DOS SHADERS ===
+    glEnable(GL_DEPTH_TEST);
+
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
-    // === CARREGAMENTO DOS MODELOS ===
+    ShaderProgram depthShader;
+    depthShader.Create("assets/shaders/directional_depth_vertex.glsl",
+                       "assets/shaders/directional_depth_fragment.glsl");
+
     Model characterModel;
     if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
         std::cerr << "Falha ao carregar modelo 3D (scene.gltf)." << std::endl;
@@ -232,7 +230,6 @@ int main()
         return -1;
     }
 
-    // === TEXTURAS DOS MATERIAIS ===
     Texture characterTexture;
     if (!characterTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
         std::cerr << "Falha ao carregar textura do personagem." << std::endl;
@@ -244,12 +241,6 @@ int main()
         std::cerr << "Falha ao carregar textura do chão (CubeTexture.jpg)." << std::endl;
         return -1;
     }
-
-    // === CONFIGURAÇÃO DAS MATRIZES E PARÂMETROS DE ILUMINAÇÃO ===
-    glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
-                                           1280.0f / 720.0f,
-                                           0.1f,
-                                           100.0f);
 
     Material characterMaterial(
         glm::vec3(0.35f, 0.35f, 0.35f),
@@ -265,98 +256,47 @@ int main()
         8.0f,
         &floorTexture);
 
-    DirectionalLightManager directionalLights(kMaxDirectionalLights);
-    directionalLights.AddLight({ glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
-                                 glm::vec3(0.25f, 0.22f, 0.20f),
-                                 glm::vec3(0.9f, 0.85f, 0.8f),
-                                 glm::vec3(1.0f),
-                                 true,
-                                 glm::vec3(0.0f, 1.0f, 0.0f),
-                                 0.35f });
-    directionalLights.AddLight({ glm::normalize(glm::vec3(0.35f, -1.0f, 0.2f)),
-                                 glm::vec3(0.05f, 0.05f, 0.08f),
-                                 glm::vec3(0.3f, 0.35f, 0.5f),
-                                 glm::vec3(0.35f, 0.4f, 0.55f),
-                                 false });
-    directionalLights.AddLight({ glm::normalize(glm::vec3(0.0f, -1.0f, 0.0f)),
-                                 glm::vec3(0.02f, 0.02f, 0.02f),
-                                 glm::vec3(0.18f, 0.12f, 0.08f),
-                                 glm::vec3(0.05f, 0.05f, 0.05f),
-                                 false });
-
-    PointLightManager pointLights(kMaxPointLights);
-    pointLights.AddLight({ glm::vec3(1.8f, 1.5f, 2.2f),
-                           glm::vec3(0.04f, 0.04f, 0.04f),
-                           glm::vec3(1.0f, 0.83f, 0.62f),
-                           glm::vec3(1.0f, 0.95f, 0.85f),
-                           1.0f,
-                           0.07f,
-                           0.017f,
-                           18.0f });
-    pointLights.AddLight({ glm::vec3(-2.5f, 1.2f, -1.8f),
-                           glm::vec3(0.03f, 0.03f, 0.05f),
-                           glm::vec3(0.45f, 0.55f, 1.0f),
-                           glm::vec3(0.6f, 0.7f, 1.0f),
-                           1.0f,
-                           0.09f,
-                           0.032f,
-                           12.0f });
-    pointLights.AddLight({ glm::vec3(0.0f, 3.0f, 0.0f),
-                           glm::vec3(0.06f, 0.06f, 0.06f),
-                           glm::vec3(0.9f, 0.9f, 0.9f),
-                           glm::vec3(1.0f),
-                           1.0f,
-                           0.05f,
-                           0.007f,
-                           24.0f });
-
-    SpotLightManager spotLights(kMaxSpotLights);
-    const auto DegreesToCos = [](float degrees) {
-        return glm::cos(glm::radians(degrees));
+    DirectionalLight mainSun{
+        glm::normalize(glm::vec3(-0.4f, -1.0f, -0.3f)),
+        glm::vec3(0.25f, 0.22f, 0.20f),
+        glm::vec3(0.9f, 0.85f, 0.8f),
+        glm::vec3(1.0f),
+        false,
+        glm::vec3(0.0f),
+        0.0f
     };
 
-    spotLights.AddLight({ glm::vec3(0.0f, 3.8f, 2.0f),
-                          glm::normalize(glm::vec3(0.0f, -1.0f, -0.35f)),
-                          glm::vec3(0.03f, 0.02f, 0.02f),
-                          glm::vec3(0.95f, 0.65f, 0.35f),
-                          glm::vec3(1.0f, 0.85f, 0.6f),
-                          DegreesToCos(14.0f),
-                          DegreesToCos(20.0f),
-                          1.0f,
-                          0.045f,
-                          0.0075f,
-                          25.0f });
+    DirectionalLightManager directionalLights(kMaxDirectionalLights);
+    directionalLights.AddLight(mainSun);
+    directionalLights.AddLight({ glm::normalize(glm::vec3(0.3f, -1.0f, 0.15f)),
+                                 glm::vec3(0.02f, 0.02f, 0.03f),
+                                 glm::vec3(0.35f, 0.4f, 0.55f),
+                                 glm::vec3(0.25f, 0.3f, 0.45f),
+                                 false });
 
-    const int sweepingSpotIndex = spotLights.AddLight({ glm::vec3(-3.0f, 2.2f, 0.0f),
-                                                        glm::normalize(glm::vec3(0.6f, -0.5f, -0.2f)),
-                                                        glm::vec3(0.02f, 0.02f, 0.04f),
-                                                        glm::vec3(0.3f, 0.5f, 1.0f),
-                                                        glm::vec3(0.6f, 0.8f, 1.0f),
-                                                        DegreesToCos(12.0f),
-                                                        DegreesToCos(18.0f),
-                                                        1.0f,
-                                                        0.05f,
-                                                        0.01f,
-                                                        22.0f });
+    GLuint depthMapFBO = 0;
+    glGenFramebuffers(1, &depthMapFBO);
 
-    const int cameraSpotIndex = spotLights.AddLight({ camera.GetPosition(),
-                                                      camera.GetFront(),
-                                                      glm::vec3(0.01f, 0.01f, 0.015f),
-                                                      glm::vec3(0.9f, 0.9f, 1.0f),
-                                                      glm::vec3(1.0f),
-                                                      DegreesToCos(9.0f),
-                                                      DegreesToCos(15.0f),
-                                                      1.0f,
-                                                      0.08f,
-                                                      0.01f,
-                                                      20.0f });
+    GLuint depthMap = 0;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, kShadowMapWidth, kShadowMapHeight, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float borderColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-    const glm::vec3 flashlightOffset(0.0f, -0.1f, 0.0f);
-    const glm::vec3 sweepingAxis(0.0f, 1.0f, 0.0f);
-    const glm::vec3 sweepingBaseDirection = glm::normalize(glm::vec3(0.15f, -0.85f, -0.35f));
-    const float sweepingSpeed = 0.45f;
-
-    glEnable(GL_DEPTH_TEST);
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Erro ao configurar framebuffer de depth para shadow mapping." << std::endl;
+        return -1;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     shaderProgram.Use();
     const GLint modelLoc = glGetUniformLocation(shaderProgram.program, "model");
@@ -364,81 +304,110 @@ int main()
     const GLint projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
     const GLint viewPosLoc = glGetUniformLocation(shaderProgram.program, "viewPos");
     const GLint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
-
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    const GLint lightSpaceLoc = glGetUniformLocation(shaderProgram.program, "lightSpaceMatrix");
+    const GLint shadowMapLoc = glGetUniformLocation(shaderProgram.program, "shadowMap");
     glUniform1i(samplerLoc, 0);
+    if (shadowMapLoc >= 0) {
+        glUniform1i(shadowMapLoc, 1);
+    }
 
-    // === LOOP PRINCIPAL DA APLICAÇÃO ===
-    // Variáveis para controle de tempo
+    depthShader.Use();
+    const GLint depthModelLoc = glGetUniformLocation(depthShader.program, "model");
+    const GLint depthLightSpaceLoc = glGetUniformLocation(depthShader.program, "lightSpaceMatrix");
+
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
 
     while (!glfwWindowShouldClose(window))
     {
-        // Calcular delta time para movimento suave
         float currentFrame = static_cast<float>(glfwGetTime());
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // Processar entrada do usuário (WASD + mouse)
         ProcessInput(window, deltaTime);
 
-        // Limpa os buffers de cor e profundidade
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // === RENDERIZAÇÃO DO MODELO 3D ===
-        shaderProgram.Use();
-
-        glm::mat4 view = camera.GetViewMatrix();
-
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
-        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-        if (sweepingSpotIndex >= 0) {
-            if (SpotLight* sweeping = spotLights.GetLightMutable(sweepingSpotIndex)) {
-                glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), currentFrame * sweepingSpeed, sweepingAxis);
-                glm::vec3 rotatedDirection = glm::vec3(rotation * glm::vec4(sweepingBaseDirection, 0.0f));
-                sweeping->direction = glm::normalize(rotatedDirection);
-            }
+        int viewportWidth = 0;
+        int viewportHeight = 0;
+        glfwGetFramebufferSize(window, &viewportWidth, &viewportHeight);
+        if (viewportWidth == 0 || viewportHeight == 0) {
+            viewportWidth = 1280;
+            viewportHeight = 720;
         }
 
-        if (cameraSpotIndex >= 0) {
-            if (SpotLight* flashlight = spotLights.GetLightMutable(cameraSpotIndex)) {
-                flashlight->position = camera.GetPosition() + flashlightOffset;
-                flashlight->direction = glm::normalize(camera.GetFront());
-            }
+        glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
+                                                static_cast<float>(viewportWidth) / static_cast<float>(viewportHeight),
+                                                0.1f,
+                                                100.0f);
+
+        glm::vec3 lightDirection = glm::normalize(mainSun.direction);
+        if (glm::length(lightDirection) < 0.0001f) {
+            lightDirection = glm::normalize(glm::vec3(-0.3f, -1.0f, -0.3f));
         }
+        const glm::vec3 sceneCenter(0.0f, 0.0f, 0.0f);
+        const float lightDistance = 25.0f;
+        glm::vec3 lightPos = sceneCenter - lightDirection * lightDistance;
+        glm::vec3 upVector = glm::abs(lightDirection.y) > 0.95f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::mat4 lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, kShadowNearPlane, kShadowFarPlane);
+        glm::mat4 lightView = glm::lookAt(lightPos, sceneCenter, upVector);
+        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
-        directionalLights.Upload(shaderProgram.program, currentFrame);
-        pointLights.Upload(shaderProgram.program);
-        spotLights.Upload(shaderProgram.program);
-
-        // === DESENHA O CHÃO ===
-        floorMaterial.Apply(shaderProgram.program);
-        floorMaterial.BindTexture(GL_TEXTURE0);
         glm::mat4 floorMatrix = glm::mat4(1.0f);
         floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, -0.15f, 0.0f));
         floorMatrix = glm::scale(floorMatrix, glm::vec3(10.0f, 0.2f, 10.0f));
+        glm::mat4 characterMatrix = glm::mat4(1.0f);
+
+        glViewport(0, 0, kShadowMapWidth, kShadowMapHeight);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        depthShader.Use();
+        if (depthLightSpaceLoc >= 0) {
+            glUniformMatrix4fv(depthLightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+        }
+        if (depthModelLoc >= 0) {
+            glUniformMatrix4fv(depthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
+        }
+        floorModel.Draw(0);
+        if (depthModelLoc >= 0) {
+            glUniformMatrix4fv(depthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
+        }
+        characterModel.Draw(0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glViewport(0, 0, viewportWidth, viewportHeight);
+        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        shaderProgram.Use();
+        glm::mat4 view = camera.GetViewMatrix();
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
+        if (lightSpaceLoc >= 0) {
+            glUniformMatrix4fv(lightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+        }
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+
+        directionalLights.Upload(shaderProgram.program, currentFrame);
+
+        floorMaterial.Apply(shaderProgram.program);
+        floorMaterial.BindTexture(GL_TEXTURE0);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
         floorModel.Draw(0);
 
-        // === DESENHA O PERSONAGEM ===
         characterMaterial.Apply(shaderProgram.program);
         characterMaterial.BindTexture(GL_TEXTURE0);
-        glm::mat4 characterMatrix = glm::mat4(1.0f);
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
         characterModel.Draw(0);
 
-        // === GERENCIAMENTO DE BUFFERS ===
-        // Trocar os buffers (double buffering) para exibir o frame renderizado
         glfwSwapBuffers(window);
-        // Processar eventos da janela (teclado, mouse, redimensionamento, etc.)
         glfwPollEvents();
     }
 
     shaderProgram.Delete();
+    depthShader.Delete();
+    glDeleteFramebuffers(1, &depthMapFBO);
+    glDeleteTextures(1, &depthMap);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;

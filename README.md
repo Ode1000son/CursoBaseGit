@@ -1,12 +1,12 @@
-# Aula 5.3 – Spot Lights
+# Aula 6.1 – Shadow Mapping Direcional
 
-Terceira etapa do módulo avançado. Além das luzes direcionais e pontuais já existentes, introduzimos **luzes cônicas** com controle total de cone (inner/outer angles), falloff angular suave e alcance limitado. Também adicionamos uma lanterna ligada à câmera para demonstrar spot lights dinâmicas.
+Primeira aula do módulo de sombras. Partimos da cena completa com materiais e luzes direcionais e implementamos o pipeline clássico de **shadow mapping direcional**: passamos a gerar um depth map dedicado, calculamos a light space matrix e integramos comparação com bias + PCF no shader principal.
 
 ## Conteúdo Abordado
-- **SpotLightManager dedicado**: gerencia arrays de spots com posições, direções, cones e coeficientes de atenuação.
-- **Cone-based lighting**: shader calcula a intensidade angular com base nos cortes interno/externo para evitar transições bruscas.
-- **Falloff composto**: combinação do falloff angular com o mesmo modelo físico de distância (constant/linear/quadratic + range).
-- **Lanterna em primeira pessoa**: um dos spots segue posição/direção da câmera a cada frame, simulando uma flashlight.
+- **Depth-only rendering**: novo shader (`directional_depth_vertex/fragment`) e framebuffer configurado com textura de profundidade 2D.
+- **Light space matrix**: construção de projeção ortográfica + view da luz para cobrir a cena inteira controlando range/near/far.
+- **Shadow comparison + PCF**: shader principal usa o depth map para descartar fragmentos em sombra com bias dinâmico e filtro 3x3.
+- **Integração modular**: o render loop executa dois passes (shadow + forward) reaproveitando materiais, modelos e gerenciador de luzes.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -23,11 +23,11 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                 # Configura janela, materiais e sincroniza as luzes
-├── camera.{h,cpp}           # Sistema de câmera FPS (base para a lanterna)
+├── main.cpp                 # Configura janela, materiais e pipeline de shadow mapping
+├── camera.{h,cpp}           # Sistema de câmera FPS usado nos dois passes
 ├── texture.{h,cpp}          # Carregamento/gerenciamento de texturas (stb_image)
-├── material.{h,cpp}         # Materiais reaproveitados
-├── light_manager.{h,cpp}    # Directional, Point e Spot light managers
+├── material.{h,cpp}         # Materiais reutilizados (personagem + chão)
+├── light_manager.{h,cpp}    # Gerencia as luzes direcionais
 ├── model.{h,cpp}            # Carregamento Assimp + gerenciamento de meshes
 
 assets/
@@ -37,7 +37,9 @@ assets/
 │   ├── CubeTexture.jpg               # Textura aplicada ao chão
 │   └── Vitalik_edit_2.png            # Textura usada pelo personagem
 └── shaders/
-    ├── vertex.glsl   # Normal matrix correta
-    └── fragment.glsl # Phong com direcionais + pontuais + spots (cone + falloff angular)
+    ├── vertex.glsl                     # MVP + lightSpaceMatrix
+    ├── fragment.glsl                   # Phong + cálculo de sombra direcional (bias + PCF)
+    ├── directional_depth_vertex.glsl   # Depth-only para o passe da luz
+    └── directional_depth_fragment.glsl # Fragment shader vazio (depth only)
 ```
 
