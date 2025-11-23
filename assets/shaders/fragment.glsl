@@ -46,7 +46,8 @@ uniform vec3 pointShadowLightPos;
 uniform float shadowFarPlane;
 uniform int shadowPointIndex;
 
-out vec4 FragColor;
+layout (location = 0) out vec4 SceneColor;
+layout (location = 1) out vec4 HighlightColor;
 
 float CalculateDirectionalShadow(vec4 fragPosLS, vec3 norm, vec3 lightDir)
 {
@@ -169,5 +170,8 @@ void main()
 
     result = max(result, vec3(0.0));
     vec3 gammaCorrected = pow(result, vec3(1.0 / gamma));
-    FragColor = vec4(gammaCorrected, 1.0f);
+    float brightness = dot(gammaCorrected, vec3(0.2126, 0.7152, 0.0722));
+    vec3 highlight = brightness > 0.8 ? gammaCorrected : vec3(0.0);
+    SceneColor = vec4(gammaCorrected, 1.0f);
+    HighlightColor = vec4(highlight, 1.0f);
 }

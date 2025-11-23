@@ -28,6 +28,107 @@ constexpr float kShadowNearPlane = 1.0f;
 constexpr float kShadowFarPlane = 60.0f;
 constexpr float kPointShadowNearPlane = 0.1f;
 constexpr float kPointShadowFarPlane = 35.0f;
+constexpr int kDefaultFramebufferWidth = 1280;
+constexpr int kDefaultFramebufferHeight = 720;
+
+struct MultiRenderTargetFramebuffer
+{
+    GLuint fbo = 0;
+    std::array<GLuint, 2> colorAttachments{ 0, 0 };
+    GLuint depthBuffer = 0;
+    int width = 0;
+    int height = 0;
+};
+
+constexpr std::array<float, 24> kFullscreenQuadVertices{
+    -1.0f,  1.0f, 0.0f, 1.0f,
+    -1.0f, -1.0f, 0.0f, 0.0f,
+     1.0f, -1.0f, 1.0f, 0.0f,
+
+    -1.0f,  1.0f, 0.0f, 1.0f,
+     1.0f, -1.0f, 1.0f, 0.0f,
+     1.0f,  1.0f, 1.0f, 1.0f
+};
+
+bool EnsureFramebufferSize(MultiRenderTargetFramebuffer& framebuffer, int width, int height)
+{
+    width = std::max(width, 1);
+    height = std::max(height, 1);
+
+    if (framebuffer.fbo == 0) {
+        glGenFramebuffers(1, &framebuffer.fbo);
+    }
+    for (GLuint& attachment : framebuffer.colorAttachments) {
+        if (attachment == 0) {
+            glGenTextures(1, &attachment);
+        }
+    }
+    if (framebuffer.depthBuffer == 0) {
+        glGenRenderbuffers(1, &framebuffer.depthBuffer);
+    }
+
+    if (width == framebuffer.width && height == framebuffer.height) {
+        return true;
+    }
+
+    framebuffer.width = width;
+    framebuffer.height = height;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer.fbo);
+    for (std::size_t i = 0; i < framebuffer.colorAttachments.size(); ++i) {
+        glBindTexture(GL_TEXTURE_2D, framebuffer.colorAttachments[i]);
+        glTexImage2D(GL_TEXTURE_2D,
+                     0,
+                     GL_RGBA16F,
+                     framebuffer.width,
+                     framebuffer.height,
+                     0,
+                     GL_RGBA,
+                     GL_FLOAT,
+                     nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,
+                               GL_COLOR_ATTACHMENT0 + static_cast<GLint>(i),
+                               GL_TEXTURE_2D,
+                               framebuffer.colorAttachments[i],
+                               0);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glBindRenderbuffer(GL_RENDERBUFFER, framebuffer.depthBuffer);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, framebuffer.width, framebuffer.height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, framebuffer.depthBuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    const GLuint attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
+    bool isComplete = (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return isComplete;
+}
+
+void DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer)
+{
+    if (framebuffer.fbo != 0) {
+        glDeleteFramebuffers(1, &framebuffer.fbo);
+        framebuffer.fbo = 0;
+    }
+    for (GLuint& attachment : framebuffer.colorAttachments) {
+        if (attachment != 0) {
+            glDeleteTextures(1, &attachment);
+            attachment = 0;
+        }
+    }
+    if (framebuffer.depthBuffer != 0) {
+        glDeleteRenderbuffers(1, &framebuffer.depthBuffer);
+        framebuffer.depthBuffer = 0;
+    }
+    framebuffer.width = 0;
+    framebuffer.height = 0;
+}
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -363,8 +464,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 7.2 - Cena Completa
-/// Demonstra gerenciamento de cena com múltiplos modelos, transformações independentes e sistema de overrides.
+/// @brief Função principal da Aula 8.1 - Framebuffers e MRT
+/// Demonstra renderização off-screen com múltiplos render targets + pipeline de pós-processamento.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -378,7 +479,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 7.2 - Cena Completa", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 8.1 - Framebuffers e MRT", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -400,6 +501,13 @@ int main()
     }
 
     glEnable(GL_DEPTH_TEST);
+
+    MultiRenderTargetFramebuffer sceneFramebuffer;
+    if (!EnsureFramebufferSize(sceneFramebuffer, kDefaultFramebufferWidth, kDefaultFramebufferHeight)) {
+        std::cerr << "Falha ao configurar o framebuffer off-screen da Aula 8.1." << std::endl;
+        return -1;
+    }
+
     const GLuint defaultWhiteTexture = CreateSolidColorTexture(glm::vec4(1.0f));
 
     ShaderProgram shaderProgram;
@@ -413,6 +521,26 @@ int main()
     pointDepthShader.Create("assets/shaders/depth_vertex.glsl",
                             "assets/shaders/depth_fragment.glsl",
                             "assets/shaders/depth_geometry.glsl");
+
+    ShaderProgram postProcessShader;
+    postProcessShader.Create("assets/shaders/postprocess_vertex.glsl",
+                             "assets/shaders/postprocess_fragment.glsl");
+
+    GLuint quadVAO = 0;
+    GLuint quadVBO = 0;
+    glGenVertexArrays(1, &quadVAO);
+    glGenBuffers(1, &quadVBO);
+    glBindVertexArray(quadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(kFullscreenQuadVertices.size() * sizeof(float)),
+                 kFullscreenQuadVertices.data(),
+                 GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), reinterpret_cast<void*>(2 * sizeof(float)));
+    glBindVertexArray(0);
 
     Model characterModel;
     if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
@@ -632,6 +760,24 @@ int main()
         glUniform1f(pointDepthFarPlaneLoc, kPointShadowFarPlane);
     }
 
+    postProcessShader.Use();
+    const GLint sceneColorLocPP = glGetUniformLocation(postProcessShader.program, "sceneColor");
+    const GLint sceneHighlightsLocPP = glGetUniformLocation(postProcessShader.program, "sceneHighlights");
+    const GLint exposureLoc = glGetUniformLocation(postProcessShader.program, "exposure");
+    const GLint bloomIntensityLoc = glGetUniformLocation(postProcessShader.program, "bloomIntensity");
+    if (sceneColorLocPP >= 0) {
+        glUniform1i(sceneColorLocPP, 0);
+    }
+    if (sceneHighlightsLocPP >= 0) {
+        glUniform1i(sceneHighlightsLocPP, 1);
+    }
+    if (exposureLoc >= 0) {
+        glUniform1f(exposureLoc, 1.05f);
+    }
+    if (bloomIntensityLoc >= 0) {
+        glUniform1f(bloomIntensityLoc, 0.85f);
+    }
+
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
 
@@ -661,8 +807,13 @@ int main()
         int viewportHeight = 0;
         glfwGetFramebufferSize(window, &viewportWidth, &viewportHeight);
         if (viewportWidth == 0 || viewportHeight == 0) {
-            viewportWidth = 1280;
-            viewportHeight = 720;
+            viewportWidth = kDefaultFramebufferWidth;
+            viewportHeight = kDefaultFramebufferHeight;
+        }
+        if (!EnsureFramebufferSize(sceneFramebuffer, viewportWidth, viewportHeight)) {
+            std::cerr << "Falha ao redimensionar o framebuffer off-screen para "
+                      << viewportWidth << "x" << viewportHeight << std::endl;
+            break;
         }
 
         glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
@@ -720,8 +871,9 @@ int main()
         DrawSceneObjects(scene, pointDepthModelLoc, pointDepthShader.program, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        glViewport(0, 0, viewportWidth, viewportHeight);
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        glViewport(0, 0, sceneFramebuffer.width, sceneFramebuffer.height);
+        glBindFramebuffer(GL_FRAMEBUFFER, sceneFramebuffer.fbo);
+        glClearColor(0.02f, 0.02f, 0.025f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         shaderProgram.Use();
@@ -750,6 +902,23 @@ int main()
         pointLights.Upload(shaderProgram.program);
 
         DrawSceneObjects(scene, modelLoc, shaderProgram.program, defaultWhiteTexture);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glViewport(0, 0, viewportWidth, viewportHeight);
+        glClearColor(0.05f, 0.05f, 0.06f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST);
+
+        postProcessShader.Use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, sceneFramebuffer.colorAttachments[0]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, sceneFramebuffer.colorAttachments[1]);
+        glBindVertexArray(quadVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+        glEnable(GL_DEPTH_TEST);
+        glActiveTexture(GL_TEXTURE0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -758,10 +927,14 @@ int main()
     shaderProgram.Delete();
     directionalDepthShader.Delete();
     pointDepthShader.Delete();
+    postProcessShader.Delete();
+    glDeleteVertexArrays(1, &quadVAO);
+    glDeleteBuffers(1, &quadVBO);
     glDeleteFramebuffers(1, &depthMapFBO);
     glDeleteTextures(1, &depthMap);
     glDeleteFramebuffers(1, &pointDepthMapFBO);
     glDeleteTextures(1, &pointDepthCubemap);
+    DestroyFramebuffer(sceneFramebuffer);
     glDeleteTextures(1, &defaultWhiteTexture);
     glfwDestroyWindow(window);
     glfwTerminate();
