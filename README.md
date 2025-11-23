@@ -1,13 +1,13 @@
-# Aula 2.2 – Sistema de Câmera
+# Aula 3.1 – Carregamento de Texturas
 
-Terceira entrega prática do curso. Implementa um sistema de câmera interativa com controles WASD e mouse para navegação 3D.
+Quarta entrega prática do curso. Demonstra o carregamento e aplicação de texturas usando stb_image e samplers OpenGL.
 
 ## Conteúdo Abordado
-- **Classe Camera**: Sistema de câmera FPS-style
-- **Movimentação WASD**: Controles de teclado para navegação
-- **Controle por Mouse**: Look around com captura do cursor
-- **Matriz LookAt**: Cálculo automático da matriz de visão
-- **Delta Time**: Movimento suave independente da taxa de frames
+- **Classe Texture**: Sistema completo de carregamento de texturas
+- **stb_image**: Biblioteca para carregamento de imagens (PNG, JPG, etc.)
+- **Coordenadas UV**: Mapeamento de texturas nos vértices
+- **Sampler Uniforms**: Passagem de texturas para shaders
+- **Atributos de Vértice**: Posição + Cor + UV coordinates
 
 ## Controles
 - **WASD**: Movimentação horizontal (Forward/Back/Left/Right)
@@ -26,7 +26,20 @@ run.bat      # executa a aplicação
 src/
 ├── main.cpp       # Loop principal e configuração
 ├── camera.h       # Interface da classe Camera
-└── camera.cpp     # Implementação da câmera
+├── camera.cpp     # Implementação da câmera
+├── texture.h      # Interface da classe Texture
+└── texture.cpp    # Implementação do carregamento de texturas
+
+assets/
+├── texture.png    # Textura aplicada ao triângulo
+└── shaders/
+    ├── vertex.glsl     # Shader com suporte a UV coordinates
+    └── fragment.glsl   # Shader com sampler de textura
+```
+
+## Formato dos Dados do Vértice
+```
+Posição (x,y,z) + Cor (r,g,b) + UV (u,v) = 8 floats por vértice
 ```
 
 Scripts reutilizam dependências do projeto `ultraMini`.

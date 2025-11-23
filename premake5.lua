@@ -31,7 +31,8 @@ project "CursoOpenGL"
     includedirs {
         "vendor/glad/include",
         "vendor/glfw-3.4/include",
-        "vendor/glm"
+        "vendor/glm",
+        "vendor/stb"
     }
 
     libdirs {
@@ -40,7 +41,7 @@ project "CursoOpenGL"
 
     links {
         "opengl32",
-        "glfw3" 
+        "glfw3"
     }
 
     filter "configurations:Debug"

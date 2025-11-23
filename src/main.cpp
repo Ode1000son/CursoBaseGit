@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include "camera.h"
+#include "texture.h"
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera;  // Instância da câmera
@@ -161,9 +162,9 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 2.2 - Sistema de Câmera
-/// Esta função demonstra um sistema de câmera interativa com movimentação WASD
-/// e controle por mouse. Implementa câmera FPS-style com LookAt matrix.
+/// @brief Função principal da Aula 3.1 - Carregamento de Texturas
+/// Esta função demonstra o carregamento e aplicação de texturas usando stb_image.
+/// O triângulo agora é renderizado com uma textura aplicada.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -180,7 +181,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 2.2 - Sistema de Camera", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 3.1 - Carregamento de Texturas", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -210,13 +211,21 @@ int main()
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
+    // === CARREGAMENTO DA TEXTURA ===
+    Texture triangleTexture;
+    if (!triangleTexture.LoadFromFile("assets/texture.png")) {
+        std::cerr << "Falha ao carregar textura!" << std::endl;
+        return -1;
+    }
+
     // === DEFINIÇÃO DOS VÉRTICES DO TRIÂNGULO ===
     // Triângulo simples com coordenadas normalizadas (-1 a 1)
+    // Formato: Posição (x,y,z) + Cor (r,g,b) + UV (u,v)
     float vertices[] = {
-        // Posições        // Cores
-        -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,  // Vértice inferior esquerdo (vermelho)
-         0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,  // Vértice inferior direito (verde)
-         0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f   // Vértice superior (azul)
+        // Posições        // Cores           // Coordenadas UV
+        -0.5f, -0.5f, 0.0f,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f,  // Vértice inferior esquerdo
+         0.5f, -0.5f, 0.0f,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f,  // Vértice inferior direito
+         0.0f,  0.5f, 0.0f,  0.0f, 0.0f, 1.0f,  0.5f, 1.0f   // Vértice superior
     };
 
     // === CRIAÇÃO DO VAO (Vertex Array Object) ===
@@ -231,13 +240,18 @@ int main()
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // === CONFIGURAÇÃO DOS ATRIBUTOS DE VÉRTICE ===
+    // Formato dos dados: Posição(3) + Cor(3) + UV(2) = 8 floats por vértice
     // Atributo 0: Posição (3 floats por vértice)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
     // Atributo 1: Cor (3 floats por vértice)
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+
+    // Atributo 2: Coordenadas UV (2 floats por vértice)
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
 
     // Desvincula o VBO e VAO
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -275,8 +289,14 @@ int main()
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // === RENDERIZAÇÃO DO TRIÂNGULO COM TRANSFORMAÇÕES ===
+        // === RENDERIZAÇÃO DO TRIÂNGULO COM TEXTURA ===
         shaderProgram.Use();
+
+        // Vincula a textura na unidade 0
+        triangleTexture.Bind(GL_TEXTURE0);
+
+        // Define o sampler uniform para usar a textura da unidade 0
+        glUniform1i(glGetUniformLocation(shaderProgram.program, "textureSampler"), 0);
 
         // === APLICAÇÃO DE TRANSFORMAÇÕES 3D ===
         // Aplicar rotação ao modelo para criar movimento animado
