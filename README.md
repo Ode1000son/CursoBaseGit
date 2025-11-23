@@ -1,12 +1,12 @@
-# Aula 5.2 – Point Lights
+# Aula 5.3 – Spot Lights
 
-Sequência direta da etapa de luzes direcionais. Mantivemos toda a base de materiais/cena e adicionamos um sistema completo de **luzes pontuais com atenuação, falloff por distância e limite de alcance configurável**. Cada luz possui posição, cores e coeficientes (constant/linear/quadratic + range) que definem o comportamento da intensidade.
+Terceira etapa do módulo avançado. Além das luzes direcionais e pontuais já existentes, introduzimos **luzes cônicas** com controle total de cone (inner/outer angles), falloff angular suave e alcance limitado. Também adicionamos uma lanterna ligada à câmera para demonstrar spot lights dinâmicas.
 
 ## Conteúdo Abordado
-- **Estruturas paralelas de iluminação**: `DirectionalLightManager` continua ativo e o novo `PointLightManager` sincroniza posições e cores das luzes pontuais.
-- **Modelo de atenuação física**: shader usa o trio constant/linear/quadratic combinado com o fator de range para cortar a luz fora do raio útil.
-- **Funções modulares**: `CalculateDirectionalLight` e `CalculatePointLight` permitem combinar múltiplos tipos de luz sem duplicar lógica.
-- **Cena reutilizada**: mesmos materiais, câmera e modelos da aula anterior garantem foco exclusivo no comportamento das luzes.
+- **SpotLightManager dedicado**: gerencia arrays de spots com posições, direções, cones e coeficientes de atenuação.
+- **Cone-based lighting**: shader calcula a intensidade angular com base nos cortes interno/externo para evitar transições bruscas.
+- **Falloff composto**: combinação do falloff angular com o mesmo modelo físico de distância (constant/linear/quadratic + range).
+- **Lanterna em primeira pessoa**: um dos spots segue posição/direção da câmera a cada frame, simulando uma flashlight.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -23,11 +23,11 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                 # Configuração do contexto, upload das luzes e render loop
-├── camera.{h,cpp}           # Sistema de câmera FPS
+├── main.cpp                 # Configura janela, materiais e sincroniza as luzes
+├── camera.{h,cpp}           # Sistema de câmera FPS (base para a lanterna)
 ├── texture.{h,cpp}          # Carregamento/gerenciamento de texturas (stb_image)
-├── material.{h,cpp}         # Classe Material com cores/shine e binding de textura
-├── light_manager.{h,cpp}    # Gerencia arrays de luzes direcionais e pontuais
+├── material.{h,cpp}         # Materiais reaproveitados
+├── light_manager.{h,cpp}    # Directional, Point e Spot light managers
 ├── model.{h,cpp}            # Carregamento Assimp + gerenciamento de meshes
 
 assets/
@@ -38,6 +38,6 @@ assets/
 │   └── Vitalik_edit_2.png            # Textura usada pelo personagem
 └── shaders/
     ├── vertex.glsl   # Normal matrix correta
-    └── fragment.glsl # Phong com direcionais + pontuais e falloff por range
+    └── fragment.glsl # Phong com direcionais + pontuais + spots (cone + falloff angular)
 ```
 

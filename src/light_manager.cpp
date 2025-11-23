@@ -74,3 +74,50 @@ void PointLightManager::Upload(GLuint program) const
     }
 }
 
+SpotLightManager::SpotLightManager(int maxLights)
+    : m_maxLights(maxLights)
+{}
+
+int SpotLightManager::AddLight(const SpotLight& light)
+{
+    if (static_cast<int>(m_lights.size()) >= m_maxLights) {
+        return -1;
+    }
+
+    m_lights.push_back(light);
+    return static_cast<int>(m_lights.size()) - 1;
+}
+
+SpotLight* SpotLightManager::GetLightMutable(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_lights.size())) {
+        return nullptr;
+    }
+
+    return &m_lights[index];
+}
+
+void SpotLightManager::Upload(GLuint program) const
+{
+    const GLint spotCountLoc = glGetUniformLocation(program, "spotCount");
+    const int count = static_cast<int>(std::min(m_lights.size(), static_cast<size_t>(m_maxLights)));
+    glUniform1i(spotCountLoc, count);
+
+    for (int i = 0; i < count; ++i) {
+        const SpotLight& light = m_lights[i];
+        const std::string base = "spotLights[" + std::to_string(i) + "]";
+
+        glUniform3fv(glGetUniformLocation(program, (base + ".position").c_str()), 1, glm::value_ptr(light.position));
+        glUniform3fv(glGetUniformLocation(program, (base + ".direction").c_str()), 1, glm::value_ptr(glm::normalize(light.direction)));
+        glUniform3fv(glGetUniformLocation(program, (base + ".ambient").c_str()), 1, glm::value_ptr(light.ambient));
+        glUniform3fv(glGetUniformLocation(program, (base + ".diffuse").c_str()), 1, glm::value_ptr(light.diffuse));
+        glUniform3fv(glGetUniformLocation(program, (base + ".specular").c_str()), 1, glm::value_ptr(light.specular));
+        glUniform1f(glGetUniformLocation(program, (base + ".innerCutoffCos").c_str()), light.innerCutoffCos);
+        glUniform1f(glGetUniformLocation(program, (base + ".outerCutoffCos").c_str()), light.outerCutoffCos);
+        glUniform1f(glGetUniformLocation(program, (base + ".constant").c_str()), light.constant);
+        glUniform1f(glGetUniformLocation(program, (base + ".linear").c_str()), light.linear);
+        glUniform1f(glGetUniformLocation(program, (base + ".quadratic").c_str()), light.quadratic);
+        glUniform1f(glGetUniformLocation(program, (base + ".range").c_str()), light.range);
+    }
+}
+

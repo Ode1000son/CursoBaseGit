@@ -2,6 +2,7 @@
 
 const int MAX_DIRECTIONAL_LIGHTS = 4;
 const int MAX_POINT_LIGHTS = 4;
+const int MAX_SPOT_LIGHTS = 4;
 
 // Dados recebidos do vertex shader
 in vec3 fragPos;
@@ -26,6 +27,20 @@ struct PointLight {
     float range;
 };
 
+struct SpotLight {
+    vec3 position;
+    vec3 direction;
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+    float innerCutoffCos;
+    float outerCutoffCos;
+    float constant;
+    float linear;
+    float quadratic;
+    float range;
+};
+
 struct Material {
     vec3 ambient;
     vec3 diffuse;
@@ -37,6 +52,8 @@ uniform int directionalCount;
 uniform DirectionalLight dirLights[MAX_DIRECTIONAL_LIGHTS];
 uniform int pointCount;
 uniform PointLight pointLights[MAX_POINT_LIGHTS];
+uniform int spotCount;
+uniform SpotLight spotLights[MAX_SPOT_LIGHTS];
 uniform Material material;
 uniform vec3 viewPos;
 uniform sampler2D textureSampler;
@@ -84,6 +101,37 @@ vec3 CalculatePointLight(PointLight light, vec3 norm, vec3 viewDir, vec3 fragPos
     return (ambient + diffuse + specular) * intensity;
 }
 
+vec3 CalculateSpotLight(SpotLight light, vec3 norm, vec3 viewDir, vec3 fragPosition, vec3 albedo)
+{
+    vec3 lightVector = light.position - fragPosition;
+    float distance = length(lightVector);
+
+    if (distance > light.range) {
+        return vec3(0.0f);
+    }
+
+    vec3 lightDir = normalize(lightVector);
+    vec3 reflectDir = reflect(-lightDir, norm);
+
+    float diff = max(dot(norm, lightDir), 0.0f);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0f), material.shininess);
+
+    float attenuation = 1.0f / (light.constant + light.linear * distance + light.quadratic * distance * distance);
+    float rangeFactor = clamp(1.0f - (distance / light.range), 0.0f, 1.0f);
+
+    float theta = dot(-lightDir, normalize(light.direction));
+    float epsilon = max(light.innerCutoffCos - light.outerCutoffCos, 0.0001f);
+    float coneIntensity = clamp((theta - light.outerCutoffCos) / epsilon, 0.0f, 1.0f);
+
+    float totalIntensity = attenuation * rangeFactor * coneIntensity;
+
+    vec3 ambient = light.ambient * (material.ambient * albedo);
+    vec3 diffuse = light.diffuse * diff * (material.diffuse * albedo);
+    vec3 specular = light.specular * spec * material.specular;
+
+    return (ambient + diffuse + specular) * totalIntensity;
+}
+
 void main()
 {
     vec3 norm = normalize(normal);
@@ -96,6 +144,9 @@ void main()
     }
     for (int i = 0; i < pointCount; ++i) {
         accumulated += CalculatePointLight(pointLights[i], norm, viewDir, fragPos, albedo);
+    }
+    for (int i = 0; i < spotCount; ++i) {
+        accumulated += CalculateSpotLight(spotLights[i], norm, viewDir, fragPos, albedo);
     }
 
     FragColor = vec4(accumulated, 1.0f);

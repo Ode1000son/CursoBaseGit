@@ -17,6 +17,7 @@
 
 constexpr int kMaxDirectionalLights = 4;
 constexpr int kMaxPointLights = 4;
+constexpr int kMaxSpotLights = 4;
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -170,8 +171,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 5.2 - Point Lights
-/// Demonstra como combinar múltiplas luzes direcionais e pontuais com materiais reutilizáveis.
+/// @brief Função principal da Aula 5.3 - Spot Lights
+/// Demonstra como combinar luzes direcionais, pontuais e cônicas (spots) usando materiais reutilizáveis.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -188,7 +189,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 5.2 - Point Lights", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 5.3 - Spot Lights", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -309,6 +310,52 @@ int main()
                            0.007f,
                            24.0f });
 
+    SpotLightManager spotLights(kMaxSpotLights);
+    const auto DegreesToCos = [](float degrees) {
+        return glm::cos(glm::radians(degrees));
+    };
+
+    spotLights.AddLight({ glm::vec3(0.0f, 3.8f, 2.0f),
+                          glm::normalize(glm::vec3(0.0f, -1.0f, -0.35f)),
+                          glm::vec3(0.03f, 0.02f, 0.02f),
+                          glm::vec3(0.95f, 0.65f, 0.35f),
+                          glm::vec3(1.0f, 0.85f, 0.6f),
+                          DegreesToCos(14.0f),
+                          DegreesToCos(20.0f),
+                          1.0f,
+                          0.045f,
+                          0.0075f,
+                          25.0f });
+
+    const int sweepingSpotIndex = spotLights.AddLight({ glm::vec3(-3.0f, 2.2f, 0.0f),
+                                                        glm::normalize(glm::vec3(0.6f, -0.5f, -0.2f)),
+                                                        glm::vec3(0.02f, 0.02f, 0.04f),
+                                                        glm::vec3(0.3f, 0.5f, 1.0f),
+                                                        glm::vec3(0.6f, 0.8f, 1.0f),
+                                                        DegreesToCos(12.0f),
+                                                        DegreesToCos(18.0f),
+                                                        1.0f,
+                                                        0.05f,
+                                                        0.01f,
+                                                        22.0f });
+
+    const int cameraSpotIndex = spotLights.AddLight({ camera.GetPosition(),
+                                                      camera.GetFront(),
+                                                      glm::vec3(0.01f, 0.01f, 0.015f),
+                                                      glm::vec3(0.9f, 0.9f, 1.0f),
+                                                      glm::vec3(1.0f),
+                                                      DegreesToCos(9.0f),
+                                                      DegreesToCos(15.0f),
+                                                      1.0f,
+                                                      0.08f,
+                                                      0.01f,
+                                                      20.0f });
+
+    const glm::vec3 flashlightOffset(0.0f, -0.1f, 0.0f);
+    const glm::vec3 sweepingAxis(0.0f, 1.0f, 0.0f);
+    const glm::vec3 sweepingBaseDirection = glm::normalize(glm::vec3(0.15f, -0.85f, -0.35f));
+    const float sweepingSpeed = 0.45f;
+
     glEnable(GL_DEPTH_TEST);
 
     shaderProgram.Use();
@@ -348,8 +395,25 @@ int main()
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+        if (sweepingSpotIndex >= 0) {
+            if (SpotLight* sweeping = spotLights.GetLightMutable(sweepingSpotIndex)) {
+                glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), currentFrame * sweepingSpeed, sweepingAxis);
+                glm::vec3 rotatedDirection = glm::vec3(rotation * glm::vec4(sweepingBaseDirection, 0.0f));
+                sweeping->direction = glm::normalize(rotatedDirection);
+            }
+        }
+
+        if (cameraSpotIndex >= 0) {
+            if (SpotLight* flashlight = spotLights.GetLightMutable(cameraSpotIndex)) {
+                flashlight->position = camera.GetPosition() + flashlightOffset;
+                flashlight->direction = glm::normalize(camera.GetFront());
+            }
+        }
+
         directionalLights.Upload(shaderProgram.program, currentFrame);
         pointLights.Upload(shaderProgram.program);
+        spotLights.Upload(shaderProgram.program);
 
         // === DESENHA O CHÃO ===
         floorMaterial.Apply(shaderProgram.program);

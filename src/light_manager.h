@@ -32,6 +32,21 @@ struct PointLight
     float range = 10.0f;
 };
 
+struct SpotLight
+{
+    glm::vec3 position{ 0.0f };
+    glm::vec3 direction{ 0.0f, -1.0f, 0.0f };
+    glm::vec3 ambient{ 0.0f };
+    glm::vec3 diffuse{ 0.0f };
+    glm::vec3 specular{ 0.0f };
+    float innerCutoffCos = 0.95f;
+    float outerCutoffCos = 0.90f;
+    float constant = 1.0f;
+    float linear = 0.09f;
+    float quadratic = 0.032f;
+    float range = 15.0f;
+};
+
 class DirectionalLightManager
 {
 public:
@@ -56,5 +71,19 @@ public:
 private:
     int m_maxLights;
     std::vector<PointLight> m_lights;
+};
+
+class SpotLightManager
+{
+public:
+    explicit SpotLightManager(int maxLights);
+
+    int AddLight(const SpotLight& light);
+    SpotLight* GetLightMutable(int index);
+    void Upload(GLuint program) const;
+
+private:
+    int m_maxLights;
+    std::vector<SpotLight> m_lights;
 };
 
