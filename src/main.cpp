@@ -9,6 +9,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <array>
+#include <cmath>
 #include "camera.h"
 #include "texture.h"
 #include "model.h"
@@ -16,10 +18,14 @@
 #include "light_manager.h"
 
 constexpr int kMaxDirectionalLights = 4;
+constexpr int kMaxPointLights = 4;
 constexpr unsigned int kShadowMapWidth = 2048;
 constexpr unsigned int kShadowMapHeight = 2048;
+constexpr unsigned int kPointShadowSize = 1024;
 constexpr float kShadowNearPlane = 1.0f;
 constexpr float kShadowFarPlane = 60.0f;
+constexpr float kPointShadowNearPlane = 0.1f;
+constexpr float kPointShadowFarPlane = 35.0f;
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
@@ -31,14 +37,21 @@ float lastY = 300.0f;    // Última posição Y do mouse
 struct ShaderProgram {
     GLuint program = 0;
 
-    void Create(const std::string& vertexPath, const std::string& fragmentPath) {
+    void Create(const std::string& vertexPath, const std::string& fragmentPath, const std::string& geometryPath = "") {
         // Carrega e compila os shaders
         GLuint vertexShader = LoadAndCompileShader(vertexPath, GL_VERTEX_SHADER);
         GLuint fragmentShader = LoadAndCompileShader(fragmentPath, GL_FRAGMENT_SHADER);
+        GLuint geometryShader = 0;
+        if (!geometryPath.empty()) {
+            geometryShader = LoadAndCompileShader(geometryPath, GL_GEOMETRY_SHADER);
+        }
 
         // Cria o programa e linka
         program = glCreateProgram();
         glAttachShader(program, vertexShader);
+        if (geometryShader != 0) {
+            glAttachShader(program, geometryShader);
+        }
         glAttachShader(program, fragmentShader);
         glLinkProgram(program);
 
@@ -53,6 +66,9 @@ struct ShaderProgram {
 
         // Limpa shaders temporários
         glDeleteShader(vertexShader);
+        if (geometryShader != 0) {
+            glDeleteShader(geometryShader);
+        }
         glDeleteShader(fragmentShader);
     }
 
@@ -173,8 +189,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 6.1 - Shadow Mapping Direcional
-/// Demonstra como gerar um depth map direcional e utilizá-lo no passe de iluminação principal.
+/// @brief Função principal da Aula 6.2 - Point Light Shadows
+/// Demonstra como gerar shadow maps direcionais e omnidirecionais na mesma cena.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -188,7 +204,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 6.1 - Shadow Mapping Direcional", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 6.2 - Point Light Shadows", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -214,9 +230,14 @@ int main()
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
-    ShaderProgram depthShader;
-    depthShader.Create("assets/shaders/directional_depth_vertex.glsl",
-                       "assets/shaders/directional_depth_fragment.glsl");
+    ShaderProgram directionalDepthShader;
+    directionalDepthShader.Create("assets/shaders/directional_depth_vertex.glsl",
+                                  "assets/shaders/directional_depth_fragment.glsl");
+
+    ShaderProgram pointDepthShader;
+    pointDepthShader.Create("assets/shaders/depth_vertex.glsl",
+                            "assets/shaders/depth_fragment.glsl",
+                            "assets/shaders/depth_geometry.glsl");
 
     Model characterModel;
     if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
@@ -274,6 +295,37 @@ int main()
                                  glm::vec3(0.25f, 0.3f, 0.45f),
                                  false });
 
+    PointLightManager pointLights(kMaxPointLights);
+    const int shadowPointIndex = pointLights.AddLight({
+        glm::vec3(0.0f, 2.8f, 0.0f),
+        glm::vec3(0.03f, 0.03f, 0.03f),
+        glm::vec3(1.0f, 0.85f, 0.6f),
+        glm::vec3(1.0f, 0.95f, 0.9f),
+        1.0f,
+        0.09f,
+        0.032f,
+        18.0f
+    });
+    pointLights.AddLight({
+        glm::vec3(-3.0f, 3.5f, -2.0f),
+        glm::vec3(0.04f, 0.05f, 0.06f),
+        glm::vec3(0.55f, 0.65f, 1.0f),
+        glm::vec3(0.35f, 0.40f, 0.55f),
+        1.0f,
+        0.14f,
+        0.07f,
+        12.0f
+    });
+
+    if (shadowPointIndex < 0) {
+        std::cerr << "Falha ao registrar a luz pontual que gera sombras." << std::endl;
+        return -1;
+    }
+
+    const glm::vec3 pointLightOrbitCenter(0.0f, 1.8f, 0.0f);
+    const float pointLightOrbitRadius = 3.8f;
+    const float pointLightVerticalAmplitude = 0.7f;
+
     GLuint depthMapFBO = 0;
     glGenFramebuffers(1, &depthMapFBO);
 
@@ -298,6 +350,39 @@ int main()
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    GLuint pointDepthMapFBO = 0;
+    glGenFramebuffers(1, &pointDepthMapFBO);
+
+    GLuint pointDepthCubemap = 0;
+    glGenTextures(1, &pointDepthCubemap);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, pointDepthCubemap);
+    for (unsigned int i = 0; i < 6; ++i) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                     0,
+                     GL_DEPTH_COMPONENT,
+                     kPointShadowSize,
+                     kPointShadowSize,
+                     0,
+                     GL_DEPTH_COMPONENT,
+                     GL_FLOAT,
+                     nullptr);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, pointDepthMapFBO);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, pointDepthCubemap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Erro ao configurar framebuffer de depth para point light shadow." << std::endl;
+        return -1;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     shaderProgram.Use();
     const GLint modelLoc = glGetUniformLocation(shaderProgram.program, "model");
     const GLint viewLoc = glGetUniformLocation(shaderProgram.program, "view");
@@ -306,14 +391,39 @@ int main()
     const GLint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
     const GLint lightSpaceLoc = glGetUniformLocation(shaderProgram.program, "lightSpaceMatrix");
     const GLint shadowMapLoc = glGetUniformLocation(shaderProgram.program, "shadowMap");
+    const GLint pointShadowMapLoc = glGetUniformLocation(shaderProgram.program, "pointShadowMap");
+    const GLint pointShadowLightPosLoc = glGetUniformLocation(shaderProgram.program, "pointShadowLightPos");
+    const GLint pointShadowFarPlaneLoc = glGetUniformLocation(shaderProgram.program, "shadowFarPlane");
+    const GLint shadowPointIndexLoc = glGetUniformLocation(shaderProgram.program, "shadowPointIndex");
     glUniform1i(samplerLoc, 0);
     if (shadowMapLoc >= 0) {
         glUniform1i(shadowMapLoc, 1);
     }
+    if (pointShadowMapLoc >= 0) {
+        glUniform1i(pointShadowMapLoc, 2);
+    }
+    if (pointShadowFarPlaneLoc >= 0) {
+        glUniform1f(pointShadowFarPlaneLoc, kPointShadowFarPlane);
+    }
+    if (shadowPointIndexLoc >= 0) {
+        glUniform1i(shadowPointIndexLoc, shadowPointIndex);
+    }
 
-    depthShader.Use();
-    const GLint depthModelLoc = glGetUniformLocation(depthShader.program, "model");
-    const GLint depthLightSpaceLoc = glGetUniformLocation(depthShader.program, "lightSpaceMatrix");
+    directionalDepthShader.Use();
+    const GLint dirDepthModelLoc = glGetUniformLocation(directionalDepthShader.program, "model");
+    const GLint dirDepthLightSpaceLoc = glGetUniformLocation(directionalDepthShader.program, "lightSpaceMatrix");
+
+    pointDepthShader.Use();
+    const GLint pointDepthModelLoc = glGetUniformLocation(pointDepthShader.program, "model");
+    const GLint pointDepthLightPosLoc = glGetUniformLocation(pointDepthShader.program, "lightPos");
+    const GLint pointDepthFarPlaneLoc = glGetUniformLocation(pointDepthShader.program, "far_plane");
+    std::array<GLint, 6> pointDepthShadowMatricesLoc{};
+    for (int i = 0; i < 6; ++i) {
+        pointDepthShadowMatricesLoc[i] = glGetUniformLocation(pointDepthShader.program, ("shadowMatrices[" + std::to_string(i) + "]").c_str());
+    }
+    if (pointDepthFarPlaneLoc >= 0) {
+        glUniform1f(pointDepthFarPlaneLoc, kPointShadowFarPlane);
+    }
 
     float deltaTime = 0.0f;
     float lastFrame = 0.0f;
@@ -325,6 +435,18 @@ int main()
         lastFrame = currentFrame;
 
         ProcessInput(window, deltaTime);
+
+        if (PointLight* caster = pointLights.GetLightMutable(shadowPointIndex)) {
+            glm::vec3 orbitOffset(
+                std::cos(currentFrame) * pointLightOrbitRadius,
+                pointLightVerticalAmplitude * std::sin(currentFrame * 0.7f),
+                std::sin(currentFrame) * pointLightOrbitRadius);
+            caster->position = pointLightOrbitCenter + orbitOffset;
+        }
+        glm::vec3 shadowLightPos(0.0f);
+        if (const PointLight* casterReadOnly = pointLights.GetLight(shadowPointIndex)) {
+            shadowLightPos = casterReadOnly->position;
+        }
 
         int viewportWidth = 0;
         int viewportHeight = 0;
@@ -359,16 +481,51 @@ int main()
         glViewport(0, 0, kShadowMapWidth, kShadowMapHeight);
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
         glClear(GL_DEPTH_BUFFER_BIT);
-        depthShader.Use();
-        if (depthLightSpaceLoc >= 0) {
-            glUniformMatrix4fv(depthLightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
+        directionalDepthShader.Use();
+        if (dirDepthLightSpaceLoc >= 0) {
+            glUniformMatrix4fv(dirDepthLightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
         }
-        if (depthModelLoc >= 0) {
-            glUniformMatrix4fv(depthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
+        if (dirDepthModelLoc >= 0) {
+            glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
         }
         floorModel.Draw(0);
-        if (depthModelLoc >= 0) {
-            glUniformMatrix4fv(depthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
+        if (dirDepthModelLoc >= 0) {
+            glUniformMatrix4fv(dirDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
+        }
+        characterModel.Draw(0);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        const glm::mat4 shadowProj = glm::perspective(glm::radians(90.0f), 1.0f, kPointShadowNearPlane, kPointShadowFarPlane);
+        std::array<glm::mat4, 6> shadowTransforms{
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f)),
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f)),
+            shadowProj * glm::lookAt(shadowLightPos, shadowLightPos + glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f))
+        };
+
+        glViewport(0, 0, kPointShadowSize, kPointShadowSize);
+        glBindFramebuffer(GL_FRAMEBUFFER, pointDepthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        pointDepthShader.Use();
+        if (pointDepthLightPosLoc >= 0) {
+            glUniform3fv(pointDepthLightPosLoc, 1, glm::value_ptr(shadowLightPos));
+        }
+        if (pointDepthFarPlaneLoc >= 0) {
+            glUniform1f(pointDepthFarPlaneLoc, kPointShadowFarPlane);
+        }
+        for (int i = 0; i < 6; ++i) {
+            if (pointDepthShadowMatricesLoc[i] >= 0) {
+                glUniformMatrix4fv(pointDepthShadowMatricesLoc[i], 1, GL_FALSE, glm::value_ptr(shadowTransforms[i]));
+            }
+        }
+        if (pointDepthModelLoc >= 0) {
+            glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
+        }
+        floorModel.Draw(0);
+        if (pointDepthModelLoc >= 0) {
+            glUniformMatrix4fv(pointDepthModelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
         }
         characterModel.Draw(0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -387,8 +544,20 @@ int main()
         }
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, depthMap);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, pointDepthCubemap);
+        if (pointShadowLightPosLoc >= 0) {
+            glUniform3fv(pointShadowLightPosLoc, 1, glm::value_ptr(shadowLightPos));
+        }
+        if (pointShadowFarPlaneLoc >= 0) {
+            glUniform1f(pointShadowFarPlaneLoc, kPointShadowFarPlane);
+        }
+        if (shadowPointIndexLoc >= 0) {
+            glUniform1i(shadowPointIndexLoc, shadowPointIndex);
+        }
 
         directionalLights.Upload(shaderProgram.program, currentFrame);
+        pointLights.Upload(shaderProgram.program);
 
         floorMaterial.Apply(shaderProgram.program);
         floorMaterial.BindTexture(GL_TEXTURE0);
@@ -405,9 +574,12 @@ int main()
     }
 
     shaderProgram.Delete();
-    depthShader.Delete();
+    directionalDepthShader.Delete();
+    pointDepthShader.Delete();
     glDeleteFramebuffers(1, &depthMapFBO);
     glDeleteTextures(1, &depthMap);
+    glDeleteFramebuffers(1, &pointDepthMapFBO);
+    glDeleteTextures(1, &pointDepthCubemap);
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;

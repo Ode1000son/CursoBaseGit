@@ -65,7 +65,10 @@ class PointLightManager
 public:
     explicit PointLightManager(int maxLights);
 
-    void AddLight(const PointLight& light);
+    int AddLight(const PointLight& light);
+    PointLight* GetLightMutable(int index);
+    const PointLight* GetLight(int index) const;
+    int GetCount() const;
     void Upload(GLuint program) const;
 
 private:

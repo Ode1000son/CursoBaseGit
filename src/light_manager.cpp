@@ -46,17 +46,43 @@ PointLightManager::PointLightManager(int maxLights)
     : m_maxLights(maxLights)
 {}
 
-void PointLightManager::AddLight(const PointLight& light)
+int PointLightManager::AddLight(const PointLight& light)
 {
-    if (static_cast<int>(m_lights.size()) < m_maxLights) {
-        m_lights.push_back(light);
+    if (static_cast<int>(m_lights.size()) >= m_maxLights) {
+        return -1;
     }
+
+    m_lights.push_back(light);
+    return static_cast<int>(m_lights.size()) - 1;
+}
+
+PointLight* PointLightManager::GetLightMutable(int index)
+{
+    if (index < 0 || index >= static_cast<int>(m_lights.size())) {
+        return nullptr;
+    }
+
+    return &m_lights[index];
+}
+
+const PointLight* PointLightManager::GetLight(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_lights.size())) {
+        return nullptr;
+    }
+
+    return &m_lights[index];
+}
+
+int PointLightManager::GetCount() const
+{
+    return static_cast<int>(std::min(m_lights.size(), static_cast<size_t>(m_maxLights)));
 }
 
 void PointLightManager::Upload(GLuint program) const
 {
     const GLint pointCountLoc = glGetUniformLocation(program, "pointCount");
-    const int count = static_cast<int>(std::min(m_lights.size(), static_cast<size_t>(m_maxLights)));
+    const int count = GetCount();
     glUniform1i(pointCountLoc, count);
 
     for (int i = 0; i < count; ++i) {
