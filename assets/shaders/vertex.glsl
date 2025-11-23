@@ -17,18 +17,12 @@ out vec2 texCoord;
 
 void main()
 {
-    // Calcula posição do vértice no espaço do mundo
     vec4 worldPosition = model * vec4(aPos, 1.0);
     fragPos = worldPosition.xyz;
 
-    // Transformação correta das normais usando Normal Matrix
-    // transpose(inverse(model)) remove translação e preserva ângulos
-    // mat3() converte para 3x3 (normais não precisam de componente de translação)
-    normal = mat3(transpose(inverse(model))) * aNormal;
+    // Transformação correta das normais (sem translação)
+    normal = normalize(mat3(transpose(inverse(model))) * aNormal);
 
-    // Passa coordenadas UV diretamente (não precisam de transformação)
     texCoord = aTexCoord;
-
-    // Aplica pipeline MVP completo: Projeção * Visão * Modelo
     gl_Position = projection * view * worldPosition;
 }

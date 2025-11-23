@@ -12,7 +12,7 @@
 #include "model.h"
 
 // === VARIÁVEIS GLOBAIS PARA CONTROLE DA CÂMERA ===
-Camera camera;  // Instância da câmera
+Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);  // Câmera posicionada mais acima apontando para o centro
 bool firstMouse = true;  // Controle para primeira captura do mouse
 float lastX = 400.0f;    // Última posição X do mouse
 float lastY = 300.0f;    // Última posição Y do mouse
@@ -163,8 +163,8 @@ void MouseCallback(GLFWwindow* window, double xpos, double ypos)
     lastY = static_cast<float>(ypos);
 }
 
-/// @brief Função principal da Aula 3.2 - Modelos 3D Simples
-/// Demonstra como carregar um modelo glTF com Assimp e renderizá-lo com texturas.
+/// @brief Função principal da Aula 4.1 - Phong Lighting
+/// Demonstra como aplicar o modelo de iluminação Phong (difusa + especular) em um modelo glTF.
 /// @return 0 em caso de sucesso, -1 em caso de erro
 int main()
 {
@@ -181,7 +181,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // === CRIAÇÃO DA JANELA ===
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 3.2 - Modelos 3D Simples", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "Aula 4.1 - Phong Lighting", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Falha ao criar janela GLFW" << std::endl;
@@ -211,29 +211,66 @@ int main()
     ShaderProgram shaderProgram;
     shaderProgram.Create("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
 
-    // === CARREGAMENTO DO MODELO 3D ===
+    // === CARREGAMENTO DO PERSONAGEM PRINCIPAL ===
     Model characterModel;
     if (!characterModel.LoadFromFile("assets/models/scene.gltf") || !characterModel.HasMeshes()) {
         std::cerr << "Falha ao carregar modelo 3D (scene.gltf)." << std::endl;
         return -1;
     }
 
-    // === TEXTURA PADRÃO DE FALLBACK ===
     Texture fallbackTexture;
     if (!fallbackTexture.LoadFromFile("assets/models/Vitalik_edit_2.png")) {
         std::cerr << "Falha ao carregar textura padrão de fallback." << std::endl;
         return -1;
     }
 
-    // === CONFIGURAÇÃO DAS MATRIZES MVP ===
-    // Matriz Model: transforma o objeto local para o mundo
+    // === CARREGAMENTO DO CHÃO (CUBO ESCALADO) ===
+    Model floorModel;
+    if (!floorModel.LoadFromFile("assets/models/cube.gltf") || !floorModel.HasMeshes()) {
+        std::cerr << "Falha ao carregar modelo do chão (cube.gltf)." << std::endl;
+        return -1;
+    }
+
+    Texture floorTexture;
+    if (!floorTexture.LoadFromFile("assets/models/CubeTexture.jpg")) {
+        std::cerr << "Falha ao carregar textura do chão (CubeTexture.jpg)." << std::endl;
+        return -1;
+    }
+
+    // === CONFIGURAÇÃO DAS MATRIZES E PARÂMETROS DE ILUMINAÇÃO ===
     glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
                                            1280.0f / 720.0f,
                                            0.1f,
                                            100.0f);
 
-    // Habilitar depth testing para renderização 3D
+    const glm::vec3 lightAmbient(0.18f, 0.18f, 0.22f);
+    const glm::vec3 lightDiffuse(0.85f, 0.85f, 0.9f);
+    const glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
+    const glm::vec3 materialSpecular(0.9f, 0.9f, 0.9f);
+    const float materialShininess = 32.0f;
+
     glEnable(GL_DEPTH_TEST);
+
+    shaderProgram.Use();
+    const GLint modelLoc = glGetUniformLocation(shaderProgram.program, "model");
+    const GLint viewLoc = glGetUniformLocation(shaderProgram.program, "view");
+    const GLint projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
+    const GLint viewPosLoc = glGetUniformLocation(shaderProgram.program, "viewPos");
+    const GLint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
+    const GLint lightDirectionLoc = glGetUniformLocation(shaderProgram.program, "light.direction");
+    const GLint lightAmbientLoc = glGetUniformLocation(shaderProgram.program, "light.ambient");
+    const GLint lightDiffuseLoc = glGetUniformLocation(shaderProgram.program, "light.diffuse");
+    const GLint lightSpecularLoc = glGetUniformLocation(shaderProgram.program, "light.specular");
+    const GLint materialSpecularLoc = glGetUniformLocation(shaderProgram.program, "material.specular");
+    const GLint materialShininessLoc = glGetUniformLocation(shaderProgram.program, "material.shininess");
+
+    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    glUniform3fv(lightAmbientLoc, 1, glm::value_ptr(lightAmbient));
+    glUniform3fv(lightDiffuseLoc, 1, glm::value_ptr(lightDiffuse));
+    glUniform3fv(lightSpecularLoc, 1, glm::value_ptr(lightSpecular));
+    glUniform3fv(materialSpecularLoc, 1, glm::value_ptr(materialSpecular));
+    glUniform1f(materialShininessLoc, materialShininess);
+    glUniform1i(samplerLoc, 0);
 
     // === LOOP PRINCIPAL DA APLICAÇÃO ===
     // Variáveis para controle de tempo
@@ -257,26 +294,29 @@ int main()
         // === RENDERIZAÇÃO DO MODELO 3D ===
         shaderProgram.Use();
 
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-
         glm::mat4 view = camera.GetViewMatrix();
 
-        const GLuint modelLoc = glGetUniformLocation(shaderProgram.program, "model");
-        const GLuint viewLoc = glGetUniformLocation(shaderProgram.program, "view");
-        const GLuint projectionLoc = glGetUniformLocation(shaderProgram.program, "projection");
-        const GLuint lightDirLoc = glGetUniformLocation(shaderProgram.program, "lightDirection");
-        const GLuint viewPosLoc = glGetUniformLocation(shaderProgram.program, "viewPos");
-        const GLuint samplerLoc = glGetUniformLocation(shaderProgram.program, "textureSampler");
+        const glm::vec3 animatedLightDir = glm::normalize(glm::vec3(
+            std::sin(currentFrame * 0.35f),
+            -1.0f,
+            std::cos(currentFrame * 0.35f)
+        ));
 
-        glm::vec3 lightDirection = glm::normalize(glm::vec3(-0.45f, -1.0f, -0.35f));
-
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelMatrix));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDirection));
+        glUniform3fv(lightDirectionLoc, 1, glm::value_ptr(animatedLightDir));
         glUniform3fv(viewPosLoc, 1, glm::value_ptr(camera.GetPosition()));
-        glUniform1i(samplerLoc, 0);
+        glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
+        // === DESENHA O CHÃO ===
+        glm::mat4 floorMatrix = glm::mat4(1.0f);
+        floorMatrix = glm::translate(floorMatrix, glm::vec3(0.0f, -0.15f, 0.0f));
+        floorMatrix = glm::scale(floorMatrix, glm::vec3(10.0f, 0.2f, 10.0f));
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(floorMatrix));
+        floorModel.Draw(floorTexture.GetID());
+
+        // === DESENHA O PERSONAGEM ===
+        glm::mat4 characterMatrix = glm::mat4(1.0f);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(characterMatrix));
         characterModel.Draw(fallbackTexture.GetID());
 
         // === GERENCIAMENTO DE BUFFERS ===

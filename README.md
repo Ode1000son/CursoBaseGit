@@ -1,13 +1,14 @@
-# Aula 3.2 – Modelos 3D Simples
+# Aula 4.1 – Phong Lighting
 
-Quinta entrega prática do curso. Evoluímos o pipeline da aula anterior para carregar um modelo glTF via Assimp, configurar atributos completos (posição, normal, UV) e renderizar com iluminação básica. O projeto também demonstra o uso de uma textura fallback (`Vitalik_edit_2.png`) aplicada automaticamente quando o material do modelo não fornece um arquivo válido.
+Primeira entrega do módulo de iluminação. Evoluímos o projeto da Aula 3.2 para demonstrar o modelo de iluminação Phong completo (ambiente + difusa + especular) aplicado sobre o personagem importado via Assimp. A textura `Vitalik_edit_2.png` continua funcionando como fallback caso o material do glTF não possua textura difusa própria.
 
 ## Conteúdo Abordado
-- **Integração com Assimp**: Importação de `scene.gltf` e processamento recursivo de nós/meshes.
-- **Estrutura `Model/Mesh`**: Encapsula VBO/VAO/EBO com atributos (posição, normal, UV).
-- **Textura Fallback**: `Texture` padrão utilizada se o material não carregar uma textura difusa.
-- **Iluminação Básica**: Vertex shader envia normais corretas; fragment shader calcula componentes ambiente/difusa/especular para destacar o volume do personagem.
-- **Controles FPS**: Mesmo sistema de câmera da aula 2.2 para inspeção em 3D.
+- **Shader Phong Completo**: Structs `Light` e `Material` com parâmetros independentes (direção, cores, shininess).
+- **Variação Dinâmica do Vetor de Luz**: A direção da luz gira suavemente, evidenciando o efeito especular conforme a câmera se move.
+- **Transformação Correta de Normais**: Vertex shader normaliza o resultado de `mat3(transpose(inverse(model))) * normal`.
+- **Assimp + Texturas**: Reaproveitamos a infraestrutura de `Model/Mesh` + textura fallback criada na Aula 3.2.
+- **Plano de Referência**: Um cubo importado (`cube.gltf`) é escalado e texturizado (`CubeTexture.jpg`) para servir como chão, ajudando a perceber sombras e especularidade.
+- **Controles FPS**: Mesmo sistema de navegação da Aula 2.2 para inspecionar o personagem em 3D.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -33,9 +34,11 @@ assets/
 ├── models/
 │   ├── scene.gltf          # Modelo glTF importado
 │   ├── scene.bin           # Buffers do glTF
-│   └── Vitalik_edit_2.png  # Textura usada pelo personagem/fallback
+│   ├── cube.gltf / cube.bin          # Cubo usado como chão
+│   ├── CubeTexture.jpg               # Textura aplicada ao chão
+│   └── Vitalik_edit_2.png            # Textura usada pelo personagem/fallback
 └── shaders/
-    ├── vertex.glsl   # Atributos completos + transformação de normais
-    └── fragment.glsl # Iluminação simples + amostragem de textura
+    ├── vertex.glsl   # Atributos completos + normal matrix normalizada
+    └── fragment.glsl # Implementação do modelo de iluminação Phong
 ```
 
