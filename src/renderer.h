@@ -14,6 +14,7 @@
 #include "material.h"
 #include "model.h"
 #include "texture.h"
+#include "scene.h"
 
 enum class TextureOverrideMode
 {
@@ -33,38 +34,6 @@ struct ShaderProgram
     void Destroy();
 };
 
-struct SceneObjectTransform
-{
-    glm::vec3 position{ 0.0f };
-    glm::vec3 rotation{ 0.0f };
-    glm::vec3 scale{ 1.0f };
-};
-
-struct SceneObject
-{
-    SceneObject() = default;
-    SceneObject(std::string objectName, Model* objectModel, const SceneObjectTransform& transform);
-
-    glm::mat4 GetModelMatrix() const;
-
-    std::string name;
-    Model* model{ nullptr };
-    SceneObjectTransform transform{};
-    SceneObjectTransform baseTransform{};
-};
-
-class Scene
-{
-public:
-    void Reserve(std::size_t count);
-    SceneObject& AddObject(std::string name, Model* model, const SceneObjectTransform& transform);
-    std::vector<SceneObject>& Objects();
-    const std::vector<SceneObject>& Objects() const;
-
-private:
-    std::vector<SceneObject> m_objects;
-};
-
 struct MultiRenderTargetFramebuffer
 {
     GLuint fbo = 0;
@@ -80,7 +49,7 @@ public:
     Renderer();
     ~Renderer();
 
-    bool Initialize();
+    bool Initialize(Scene* scene);
     void Shutdown();
 
     void RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime);
@@ -94,11 +63,8 @@ private:
     void DestroyShaders();
     bool CreateFullscreenQuad();
     void DestroyFullscreenQuad();
-    bool LoadSceneAssets();
-    void SetupSceneGraph();
     void SetupLights();
     bool SetupShadowResources();
-    void UpdateSceneAnimation(float currentTime);
     void UpdateOrbitingPointLight(float currentTime);
     glm::mat4 ComputeDirectionalLightMatrix() const;
     void RenderDirectionalShadowPass(const glm::mat4& lightSpaceMatrix);
@@ -116,6 +82,7 @@ private:
     void DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer);
 
     bool m_initialized = false;
+    Scene* m_scene = nullptr;
 
     ShaderProgram m_sceneShader;
     ShaderProgram m_directionalDepthShader;
@@ -138,16 +105,9 @@ private:
     PointLightManager m_pointLights;
     int m_shadowPointIndex = -1;
 
-    Scene m_scene;
     SceneObject* m_characterObject = nullptr;
     SceneObject* m_carObject = nullptr;
 
-    Model m_characterModel;
-    Model m_floorModel;
-    Model m_carModel;
-
-    Texture m_characterTexture;
-    Texture m_floorTexture;
     Texture m_checkerTexture;
     Texture m_highlightTexture;
 

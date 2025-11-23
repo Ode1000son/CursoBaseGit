@@ -5,6 +5,7 @@
 
 #include "camera.h"
 #include "renderer.h"
+#include "scene.h"
 
 Camera camera(glm::vec3(0.0f, 2.0f, 2.5f), glm::vec3(0.0f, 1.0f, 0.0f), -90.0f, -25.0f);
 bool firstMouse = true;
@@ -49,8 +50,17 @@ int main()
         return -1;
     }
 
+    Scene scene;
+    if (!scene.Initialize())
+    {
+        std::cerr << "Falha ao inicializar a cena." << std::endl;
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return -1;
+    }
+
     Renderer renderer;
-    if (!renderer.Initialize())
+    if (!renderer.Initialize(&scene))
     {
         std::cerr << "Falha ao inicializar o renderer modular." << std::endl;
         renderer.Shutdown();

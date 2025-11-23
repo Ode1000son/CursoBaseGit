@@ -170,46 +170,6 @@ void ShaderProgram::Destroy()
 }
 
 // === Scene ===
-SceneObject::SceneObject(std::string objectName, Model* objectModel, const SceneObjectTransform& transform)
-    : name(std::move(objectName))
-    , model(objectModel)
-    , transform(transform)
-    , baseTransform(transform)
-{
-}
-
-glm::mat4 SceneObject::GetModelMatrix() const
-{
-    glm::mat4 modelMatrix(1.0f);
-    modelMatrix = glm::translate(modelMatrix, transform.position);
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(transform.rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-    modelMatrix = glm::scale(modelMatrix, transform.scale);
-    return modelMatrix;
-}
-
-void Scene::Reserve(std::size_t count)
-{
-    m_objects.reserve(count);
-}
-
-SceneObject& Scene::AddObject(std::string name, Model* model, const SceneObjectTransform& transform)
-{
-    m_objects.emplace_back(std::move(name), model, transform);
-    return m_objects.back();
-}
-
-std::vector<SceneObject>& Scene::Objects()
-{
-    return m_objects;
-}
-
-const std::vector<SceneObject>& Scene::Objects() const
-{
-    return m_objects;
-}
-
 // === Renderer ===
 Renderer::Renderer()
     : m_directionalLights(kMaxDirectionalLights)
@@ -222,12 +182,22 @@ Renderer::~Renderer()
     Shutdown();
 }
 
-bool Renderer::Initialize()
+bool Renderer::Initialize(Scene* scene)
 {
     if (m_initialized)
     {
         return true;
     }
+
+    if (scene == nullptr)
+    {
+        return true;
+    }
+
+    m_scene = scene;
+    m_sceneModels = m_scene->GetModelPointers();
+    m_characterObject = m_scene->GetCharacterObject();
+    m_carObject = m_scene->GetCarObject();
 
     glEnable(GL_DEPTH_TEST);
 
@@ -245,13 +215,9 @@ bool Renderer::Initialize()
         return false;
     }
 
-    if (!LoadSceneAssets())
-    {
-        Shutdown();
-        return false;
-    }
+    m_checkerTexture.LoadFromFile("assets/texture.png");
+    m_highlightTexture.LoadFromFile("assets/models/CubeTexture.jpg");
 
-    SetupSceneGraph();
     SetupLights();
 
     if (!SetupShadowResources())
@@ -339,12 +305,13 @@ void Renderer::Shutdown()
     m_sceneModels.clear();
     m_characterObject = nullptr;
     m_carObject = nullptr;
+    m_scene = nullptr;
     m_initialized = false;
 }
 
 void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime)
 {
-    if (!m_initialized)
+    if (!m_initialized || m_scene == nullptr)
     {
         return;
     }
@@ -367,7 +334,12 @@ void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float curre
         return;
     }
 
-    UpdateSceneAnimation(currentTime);
+    if (m_scene != nullptr)
+    {
+        m_scene->Update(currentTime);
+        m_characterObject = m_scene->GetCharacterObject();
+        m_carObject = m_scene->GetCarObject();
+    }
     UpdateOrbitingPointLight(currentTime);
 
     glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
@@ -529,69 +501,6 @@ void Renderer::DestroyFullscreenQuad()
     }
 }
 
-bool Renderer::LoadSceneAssets()
-{
-    if (!m_characterModel.LoadFromFile("assets/models/scene.gltf") || !m_characterModel.HasMeshes())
-    {
-        std::cerr << "Falha ao carregar modelo 3D (scene.gltf)." << std::endl;
-        return false;
-    }
-
-    if (!m_floorModel.LoadFromFile("assets/models/cube.gltf") || !m_floorModel.HasMeshes())
-    {
-        std::cerr << "Falha ao carregar modelo do chão (cube.gltf)." << std::endl;
-        return false;
-    }
-
-    if (!m_carModel.LoadFromFile("assets/models/car.glb") || !m_carModel.HasMeshes())
-    {
-        std::cerr << "Falha ao carregar modelo do carro (car.glb)." << std::endl;
-        return false;
-    }
-
-    if (m_characterTexture.LoadFromFile("assets/models/Vitalik_edit_2.png"))
-    {
-        m_characterModel.ApplyTextureIfMissing(&m_characterTexture);
-    }
-    if (m_floorTexture.LoadFromFile("assets/models/CubeTexture.jpg"))
-    {
-        m_floorModel.ApplyTextureIfMissing(&m_floorTexture);
-    }
-    m_checkerTexture.LoadFromFile("assets/texture.png");
-    m_highlightTexture.LoadFromFile("assets/models/CubeTexture.jpg");
-
-    m_carModel.ForEachMaterial([](Material& material) {
-        material.SetSpecular(glm::vec3(0.0f));
-        material.SetShininess(1.0f);
-    });
-
-    m_sceneModels = { &m_characterModel, &m_floorModel, &m_carModel };
-
-    return true;
-}
-
-void Renderer::SetupSceneGraph()
-{
-    m_scene.Reserve(4);
-
-    m_scene.AddObject("Floor", &m_floorModel, SceneObjectTransform{
-        glm::vec3(0.0f, -0.15f, 0.0f),
-        glm::vec3(0.0f),
-        glm::vec3(10.0f, 0.2f, 10.0f)
-    });
-
-    m_characterObject = &m_scene.AddObject("Character", &m_characterModel, SceneObjectTransform{
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, -90.0f, 0.0f),
-        glm::vec3(1.0f)
-    });
-
-    m_carObject = &m_scene.AddObject("Car", &m_carModel, SceneObjectTransform{
-        glm::vec3(2.5f, -0.05f, -2.5f),
-        glm::vec3(0.0f, 90.0f, 0.0f),
-        glm::vec3(0.9f)
-    });
-}
 
 void Renderer::SetupLights()
 {
@@ -693,24 +602,6 @@ bool Renderer::SetupShadowResources()
     return true;
 }
 
-void Renderer::UpdateSceneAnimation(float currentTime)
-{
-    if (m_characterObject != nullptr)
-    {
-        m_characterObject->transform = m_characterObject->baseTransform;
-        m_characterObject->transform.position.y += 0.05f * std::sin(currentTime * 1.5f);
-        m_characterObject->transform.rotation.y += std::sin(currentTime * 0.3f) * 15.0f;
-    }
-
-    if (m_carObject != nullptr)
-    {
-        m_carObject->transform = m_carObject->baseTransform;
-        m_carObject->transform.position.x += std::cos(currentTime * 0.4f) * 0.8f;
-        m_carObject->transform.position.z += std::sin(currentTime * 0.4f) * 0.6f;
-        m_carObject->transform.position.y += 0.02f * std::sin(currentTime * 2.2f);
-        m_carObject->transform.rotation.y += static_cast<float>(std::fmod(currentTime * 45.0f, 360.0f));
-    }
-}
 
 void Renderer::UpdateOrbitingPointLight(float currentTime)
 {
@@ -870,9 +761,15 @@ void Renderer::RenderPostProcessPass(int viewportWidth, int viewportHeight)
 
 void Renderer::DrawSceneObjects(GLint modelLocation, GLuint program, GLuint fallbackTexture)
 {
-    for (const auto& object : m_scene.Objects())
+    if (m_scene == nullptr)
     {
-        if (!object.model)
+        return;
+    }
+
+    const auto& objects = m_scene->GetObjects();
+    for (const auto& object : objects)
+    {
+        if (!object.GetModel())
         {
             continue;
         }
@@ -881,12 +778,22 @@ void Renderer::DrawSceneObjects(GLint modelLocation, GLuint program, GLuint fall
             const glm::mat4 modelMatrix = object.GetModelMatrix();
             glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(modelMatrix));
         }
-        object.model->Draw(program, fallbackTexture);
+        object.GetModel()->Draw(program, fallbackTexture);
     }
 }
 
 void Renderer::ApplyOverrideMode(TextureOverrideMode mode)
 {
+    if (m_scene != nullptr)
+    {
+        m_sceneModels = m_scene->GetModelPointers();
+    }
+
+    if (m_sceneModels.empty())
+    {
+        return;
+    }
+
     for (Model* model : m_sceneModels)
     {
         if (model)

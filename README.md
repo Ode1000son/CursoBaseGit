@@ -1,21 +1,24 @@
-# Aula 8.2 – Sistema de Renderização Modular
+# Aula 8.3 – Separação de Cena e Entry Point
 
-Segunda aula do módulo de renderização avançada. Partimos da base da Aula 8.1, mas reorganizamos toda a render pipeline dentro de um **renderer modular** inspirado diretamente na arquitetura da engine **ultraMini**. O foco aqui é mostrar como encapsular inicialização, ciclo de renderização e desligamento em uma única classe plug-and-play (`renderer.cpp`), mantendo o restante da aplicação (entrada, câmera, janela) totalmente desacoplado.
+Terceira aula do módulo de renderização avançada. Evoluímos a arquitetura modular da Aula 8.2 criando uma camada explícita de **Scene management** e transformando o `main.cpp` em um entry point puro que apenas inicializa o ambiente, direciona a entrada e chama o renderer. Agora o código segue ainda mais de perto os princípios da engine **ultraMini**: cada subsistema conhece somente a sua responsabilidade e expõe interfaces plug-and-play.
 
 ## Objetivos
-- **Arquitetura de renderer dedicada**: expor claramente responsabilidades e ciclos de vida.
-- **Inicialização/Shutdown determinísticos**: criação e destruição de FBOs, shaders e assets em um único ponto.
-- **Scene rendering pipeline**: passes de sombras, renderização off-screen com MRT e pós-processamento organizados como etapas privadas do renderer.
-- **Integração com controles**: teclado/mouse ficam no `main.cpp`, que apenas injeta eventos e aciona `Renderer::RenderFrame`.
+- **Scene class dedicada**: toda a lógica de carregamento de modelos, criação dos objetos da cena e animações vive em `scene.h/.cpp`.
+- **Renderer desacoplado**: `Renderer::Initialize(Scene*)` recebe uma cena já preparada e foca exclusivamente em recursos de GPU, pós-processamento e iluminação.
+- **Main enxuto**: `main.cpp` apenas configura GLFW/GLAD, cria `Scene`, `Renderer` e executa o loop chamando `RenderFrame`.
+- **Encapsulamento total**: overrides de textura, animações, modelos e luzes ficam escondidos atrás de APIs simples, permitindo trocar a aplicação sem mexer na engine.
 
 ## Conteúdo Abordado
-- **Classe `Renderer`** (`src/renderer.{h,cpp}`): mantém estado completo (modelos, luzes, framebuffers, shaders), aplica os princípios de separação engine vs renderer e expõe uma API mínima (`Initialize`, `RenderFrame`, `Shutdown`, `SetOverrideMode`).
-- **Scene graph interno**: objetos da cena (chão, personagem, carro) e animações são geridos pelo renderer; o aplicativo cliente só precisa controlar a câmera.
-- **Pipeline em três estágios**:
-  1. **Sombras** – geração de depth maps direcionais e cúbicos.
-  2. **Renderização off-screen** – MRT HDR reutilizando a infraestrutura da Aula 8.1.
-  3. **Pós-processamento** – tone mapping + bloom em um quad de tela cheia.
-- **Atalhos plug-and-play**: o `main.cpp` chama `renderer.SetOverrideMode(...)` para alternar materiais com as teclas `1/2/3`, validando a integração entre camadas.
+- **`scene.{h,cpp}`**: define `SceneObject`, `SceneObjectTransform` e `Scene`, cuidando de:
+  - Carregar modelos e texturas.
+  - Construir o scene graph (chão, personagem, carro).
+  - Atualizar animações de cada objeto em `Scene::Update`.
+  - Expor apenas ponteiros para os modelos necessários ao renderer.
+- **`renderer.{h,cpp}`**: passou a depender apenas da interface da cena. Toda a montagem de framebuffers, MRT e passes de sombra permanece igual, mas agora recebe o estado da cena por parâmetro.
+- **`main.cpp` refatorado**: virou entry point puro, responsável por:
+  - Inicializar GLFW/GLAD.
+  - Criar `Scene` + `Renderer`.
+  - Encaminhar entrada (teclado/mouse) e atalhos de override para o renderer.
 
 ## Controles
 - `W A S D`: movimentação no plano.
@@ -35,19 +38,20 @@ run.bat      # executa o binário gerado em build/bin/Debug
 ## Estrutura Principal
 ```
 src/
-├── main.cpp                   # Loop da aplicação + entrada + câmera
-├── renderer.{h,cpp}           # Renderer modular (inicialização, passes e shutdown)
-├── camera.{h,cpp}             # Câmera FPS compartilhada
-├── light_manager.{h,cpp}      # Upload automático de direcional/pontual
-├── model.{h,cpp}              # Importador + overrides
-├── texture.{h,cpp}, material.{h,cpp}
+├── main.cpp                   # Entry point puro + roteamento de entrada
+├── scene.{h,cpp}              # Scene graph, assets e animações
+├── renderer.{h,cpp}           # Renderer plug-and-play (sombras + MRT + pós)
+├── camera.{h,cpp}
+├── light_manager.{h,cpp}
+├── material.{h,cpp}
+├── model.{h,cpp}
+└── texture.{h,cpp}
 
 assets/
 ├── models/scene.gltf, car.glb, cube.gltf, etc.
 └── shaders/
-    ├── vertex.glsl / fragment.glsl           # MRT
-    ├── postprocess_vertex/fragment.glsl      # Tone mapping + bloom
-    ├── depth_vertex/fragment/geometry.glsl   # Point shadows
+    ├── vertex/fragment.glsl                # Passo principal (MRT)
+    ├── postprocess_vertex/fragment.glsl    # Tone mapping + bloom
+    ├── depth_vertex/fragment/geometry.glsl # Sombras omnidirecionais
     ├── directional_depth_vertex/fragment.glsl
 ```
-
