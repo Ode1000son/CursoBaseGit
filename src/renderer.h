@@ -6,6 +6,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <limits>
 
 #include <glm/glm.hpp>
 
@@ -45,6 +46,46 @@ struct MultiRenderTargetFramebuffer
     int height = 0;
 };
 
+struct RendererDebugMessage
+{
+    GLenum source = 0;
+    GLenum type = 0;
+    GLenum severity = 0;
+    GLuint id = 0;
+    std::string text;
+    double timestamp = 0.0;
+};
+
+struct CpuFrameStats
+{
+    float lastMs = 0.0f;
+    float avgMs = 0.0f;
+    float minMs = 0.0f;
+    float maxMs = 0.0f;
+};
+
+struct GpuTimingSummary
+{
+    double directionalShadowMs = 0.0;
+    double pointShadowMs = 0.0;
+    double sceneMs = 0.0;
+    double postProcessMs = 0.0;
+
+    double Total() const
+    {
+        return directionalShadowMs + pointShadowMs + sceneMs + postProcessMs;
+    }
+};
+
+struct GpuTimer
+{
+    std::array<GLuint, 2> startQueries{ 0, 0 };
+    std::array<GLuint, 2> endQueries{ 0, 0 };
+    int writeIndex = 0;
+    bool primed = false;
+    double lastResultMs = 0.0;
+};
+
 class Renderer
 {
 public:
@@ -54,10 +95,16 @@ public:
     bool Initialize(Scene* scene);
     void Shutdown();
 
-    void RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime);
+    void RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime, float deltaTime);
 
     void SetOverrideMode(TextureOverrideMode mode);
     TextureOverrideMode GetOverrideMode() const { return m_overrideMode; }
+    void SetWindowTitleBase(const std::string& title);
+    void ToggleMetricsOverlay();
+    bool IsMetricsOverlayEnabled() const { return m_metricsOverlayEnabled; }
+    void ClearDebugMessages();
+    void PushDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, const std::string& message);
+    void PushOverlayStatus(const std::string& message);
 
 private:
     bool EnsureOffscreenSize(int width, int height);
@@ -93,6 +140,18 @@ private:
     void DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer);
     bool EnsureInstanceBufferSize(std::size_t instanceCount);
     void UpdateInstanceBuffer(const std::vector<glm::mat4>& matrices);
+    void RecordCpuFrameTime(float deltaTimeSeconds);
+    void UpdateOverlayTitle(GLFWwindow* window, float currentTime);
+    bool SetupGpuTimers();
+    void DestroyGpuTimers();
+    void BeginGpuTimer(GpuTimer& timer);
+    void EndGpuTimer(GpuTimer& timer);
+    void AdvanceGpuTimer(GpuTimer& timer);
+    void RefreshGpuTimingSummary();
+    static const char* DebugSourceToString(GLenum source);
+    static const char* DebugTypeToString(GLenum type);
+    static const char* DebugSeverityToString(GLenum severity);
+    void WriteDebugMessageToConsole(const RendererDebugMessage& message) const;
 
     bool m_initialized = false;
     Scene* m_scene = nullptr;
@@ -164,5 +223,27 @@ private:
     GLuint m_instanceVBO = 0;
     GLsizeiptr m_instanceBufferCapacity = 0;
     glm::vec3 m_lastCameraPos{ 0.0f };
+    std::string m_windowTitleBase;
+    std::string m_activeWindowTitle;
+    bool m_metricsOverlayEnabled = false;
+    float m_lastOverlayUpdate = 0.0f;
+    bool m_forceOverlayUpdate = false;
+
+    static constexpr std::size_t kCpuHistorySize = 240;
+    static constexpr std::size_t kMaxDebugMessages = 64;
+    std::array<float, kCpuHistorySize> m_cpuFrameHistory{};
+    std::size_t m_cpuHistoryIndex = 0;
+    bool m_cpuHistoryWrapped = false;
+    CpuFrameStats m_cpuStats{};
+
+    std::vector<RendererDebugMessage> m_debugMessages;
+    bool m_gpuTimersAvailable = false;
+    GpuTimer m_directionalShadowTimer;
+    GpuTimer m_pointShadowTimer;
+    GpuTimer m_sceneTimer;
+    GpuTimer m_postProcessTimer;
+    GpuTimingSummary m_gpuTimingSummary;
+    std::string m_overlayStatusMessage;
+    float m_lastFps = 0.0f;
 };
 

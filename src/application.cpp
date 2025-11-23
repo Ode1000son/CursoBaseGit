@@ -1,6 +1,7 @@
 #include "application.h"
 
 #include <iostream>
+#include <cstring>
 
 Application::Application(const ApplicationConfig& config)
     : m_config(config)
@@ -29,7 +30,7 @@ int Application::Run()
 
         m_inputController.ProcessInput(deltaTime);
         m_rendererController.ProcessShortcuts(m_window);
-        m_renderer.RenderFrame(m_window, m_camera, currentFrame);
+        m_renderer.RenderFrame(m_window, m_camera, currentFrame, deltaTime);
 
         glfwSwapBuffers(m_window);
         glfwPollEvents();
@@ -50,6 +51,7 @@ bool Application::Initialize()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
 
     m_window = glfwCreateWindow(m_config.width, m_config.height, m_config.title, nullptr, nullptr);
     if (!m_window)
@@ -71,6 +73,8 @@ bool Application::Initialize()
         return false;
     }
 
+    SetupDebugOutput();
+
     if (!m_scene.Initialize())
     {
         std::cerr << "Falha ao inicializar a cena." << std::endl;
@@ -82,6 +86,7 @@ bool Application::Initialize()
         std::cerr << "Falha ao inicializar o renderer." << std::endl;
         return false;
     }
+    m_renderer.SetWindowTitleBase(m_config.title);
 
     m_inputController.Initialize(&m_camera);
     m_inputController.AttachWindow(m_window);
@@ -103,5 +108,63 @@ void Application::Shutdown()
     }
 
     glfwTerminate();
+}
+
+void Application::SetupDebugOutput()
+{
+    if (m_debugOutputEnabled)
+    {
+        return;
+    }
+
+    if (glDebugMessageCallback == nullptr)
+    {
+        return;
+    }
+
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+    glDebugMessageCallback(&Application::OpenGLDebugCallback, this);
+    glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, nullptr, GL_FALSE);
+    m_debugOutputEnabled = true;
+}
+
+void Application::ForwardDebugMessage(GLenum source,
+                                      GLenum type,
+                                      GLuint id,
+                                      GLenum severity,
+                                      const std::string& message)
+{
+    m_renderer.PushDebugMessage(source, type, id, severity, message);
+}
+
+void APIENTRY Application::OpenGLDebugCallback(GLenum source,
+                                              GLenum type,
+                                              GLuint id,
+                                              GLenum severity,
+                                              GLsizei length,
+                                              const GLchar* message,
+                                              const void* userParam)
+{
+    auto* app = reinterpret_cast<Application*>(const_cast<void*>(userParam));
+    if (!app)
+    {
+        return;
+    }
+
+    std::string text;
+    if (message != nullptr)
+    {
+        if (length > 0)
+        {
+            text.assign(message, static_cast<std::size_t>(length));
+        }
+        else
+        {
+            text.assign(message);
+        }
+    }
+
+    app->ForwardDebugMessage(source, type, id, severity, text);
 }
 

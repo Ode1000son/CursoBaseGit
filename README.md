@@ -1,53 +1,52 @@
-# Aula 9.1 – Performance (Instancing, Culling e LOD)
+# Aula 9.2 – Debugging e Profiling (OpenGL Debug Output, métricas de frame e GPU timers)
 
-Primeira aula do módulo de otimização. Mantendo toda a arquitetura da engine criada nos módulos anteriores, adicionamos ferramentas de **renderização eficiente**: culling por frustum, níveis de detalhe (LOD) e instancing em GPU. Também trocamos o personagem por um peixe (`Fish.glb`) que já vem com 6 LODs distintos.
+Esta segunda aula do módulo de otimização usa a base completa de renderização construída até a Aula 9.1 para habilitar **ferramentas de desenvolvimento** diretamente na engine. O foco é identificar gargalos sem alterar o comportamento visual do projeto.
 
 ## Objetivos
-- **LOD real**: carregar o mesmo `Fish.glb` filtrando nós `Fish_LOD0..5` e selecionar o nível automaticamente conforme a distância até a câmera.
-- **Frustum culling**: cada `SceneObject` tem uma bounding sphere em world space e só é enviado à GPU quando realmente aparece na câmera.
-- **Instancing**: dezenas de pilares/corais são desenhados com um único draw usando atributos de matriz (`mat4`) e um VBO dinâmico.
-- **Shaders cientes de instancing**: vertex e depth shaders recebem o atributo `aInstanceModel` e podem alternar entre uniform `model` e matriz por instância.
+- **OpenGL debug output**: registrar mensagens de driver e GL_KHR_debug filtradas por severidade, mantendo histórico e facilitando inspeção sem pausar o jogo.
+- **Frame time measurement**: capturar tempo de CPU do frame (delta real) e estatísticas como média/máximo/mínimo em janelas deslizantes.
+- **GPU profiling**: medir seções críticas com `glQueryCounter` e atualizar continuamente os tempos de shadow pass, geometria e pós-processamento.
 
 ## Conteúdo Abordado
-- **`model.{h,cpp}`**: suporta filtro de nós (para carregar apenas um LOD do glTF) e calcula bounding boxes/esferas reutilizadas pela cena.
-- **`scene.{h,cpp}`**: cria os objetos com `SceneObjectLOD`, calcula bounds, gera lotes instanciados (`SceneInstancedBatch`) e substitui o personagem pelo peixe animado.
-- **`renderer.{h,cpp}`**: extrai frustum (`projection * view`), seleciona LODs por distância, aplica culling por esfera e gerencia um `instanceVBO` compartilhado para todos os batches.
-- **Shaders** (`vertex`, `directional_depth_vertex`, `depth_vertex`): adicionam `uUseInstanceTransform` e `aInstanceModel`.
+- **`application.{h,cpp}`**: força contextos com debug flag, liga `glDebugMessageCallback` e encaminha mensagens para o renderer.
+- **`renderer_controller.{h,cpp}`**: expõe atalhos para alternar métricas (F1), limpar mensagens (F2) e continuar controlando overrides de textura.
+- **`renderer.{h,cpp}`**: mantém histórico de frame time, cria timer queries para cada passe e atualiza o título da janela com FPS contínuo + overlay de métricas.
+- **`scene.{h,cpp}`**: reaproveitado da Aula 9.1 para fornecer objetos/instâncias que alimentam o profiling.
+- **Shaders em `assets/shaders`**: reutilizados sem alterações funcionais, garantindo que a instrumentação não impacte a saída visual.
 
 ## Controles
-- `W A S D`: movimentação no plano.
-- `Q / E`: movimento vertical.
-- `Botão direito + mouse`: look-around (cursor capturado enquanto pressionado).
-- `1`: restaura texturas originais.
-- `2`: força textura checker.
-- `3`: textura metálica de destaque.
+- `W A S D`: movimentação padrão.
+- `Q / E`: deslocamento vertical.
+- `Botão direito + mouse`: look-around.
+- `F1`: alterna overlay de métricas (frame time + GPU timers).
+- `F2`: limpa mensagens capturadas do OpenGL debug output.
 - `ESC`: encerra a aplicação.
 
 ## Como executar
 ```bash
-build.bat    # gera a solução e compila (Premake + MSBuild)
-run.bat      # executa o binário gerado em build/bin/Debug
+build.bat    # Premake + MSBuild (gera Aula09_DebugProfiling.sln)
+run.bat      # Executa build/bin/Debug/Aula09_DebugProfiling.exe
 ```
 
 ## Estrutura Principal
 ```
 src/
-├── application.{h,cpp}        # Host do loop + inicialização/encerramento
-├── input_controller.{h,cpp}   # Teclado/mouse desacoplados
-├── renderer_controller.{h,cpp}# Atalhos de depuração do renderer
-├── scene.{h,cpp}              # Scene graph + LOD + batches instanciados
-├── renderer.{h,cpp}           # Sombras, MRT, post + culling + instancing
+├── application.{h,cpp}        # Contexto + debug output
+├── input_controller.{h,cpp}
+├── renderer_controller.{h,cpp}# Toggles de métricas
+├── renderer.{h,cpp}           # GPU timers + pipeline
+├── scene.{h,cpp}              # Estatísticas de visibilidade
 ├── camera.{h,cpp}
 ├── light_manager.{h,cpp}
 ├── material.{h,cpp}
-├── model.{h,cpp}              # LOD filtering + bounding volumes
+├── model.{h,cpp}
 └── texture.{h,cpp}
 
 assets/
-├── models/Fish.glb, car.glb, cube.gltf, CubeTexture.jpg
+├── models/ (Fish.glb, etc.)
 └── shaders/
-    ├── vertex/fragment.glsl                # MRT principal + instancing flag
-    ├── postprocess_vertex/fragment.glsl    # Tone mapping + bloom
-    ├── depth_vertex/fragment/geometry.glsl # Sombras omnidirecionais
+    ├── vertex/fragment.glsl
+    ├── postprocess_vertex/fragment.glsl
+    ├── depth_vertex/fragment/geometry.glsl
     ├── directional_depth_vertex/fragment.glsl
 ```

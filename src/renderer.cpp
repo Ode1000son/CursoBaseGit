@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -290,6 +291,7 @@ bool Renderer::Initialize(Scene* scene)
 
     glGenBuffers(1, &m_instanceVBO);
     m_instanceBufferCapacity = 0;
+    m_gpuTimersAvailable = SetupGpuTimers();
 
     ApplyOverrideMode(m_overrideMode);
     m_initialized = true;
@@ -334,6 +336,7 @@ void Renderer::Shutdown()
             m_instanceVBO = 0;
             m_instanceBufferCapacity = 0;
         }
+        DestroyGpuTimers();
         return;
     }
 
@@ -372,6 +375,7 @@ void Renderer::Shutdown()
         m_instanceVBO = 0;
         m_instanceBufferCapacity = 0;
     }
+    DestroyGpuTimers();
 
     m_sceneModels.clear();
     m_characterObject = nullptr;
@@ -380,12 +384,14 @@ void Renderer::Shutdown()
     m_initialized = false;
 }
 
-void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime)
+void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime, float deltaTime)
 {
     if (!m_initialized || m_scene == nullptr)
     {
         return;
     }
+
+    RecordCpuFrameTime(deltaTime);
 
     int viewportWidth = 0;
     int viewportHeight = 0;
@@ -421,10 +427,28 @@ void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float curre
 
     glm::mat4 lightSpaceMatrix = ComputeDirectionalLightMatrix();
 
+    BeginGpuTimer(m_directionalShadowTimer);
     RenderDirectionalShadowPass(lightSpaceMatrix);
+    EndGpuTimer(m_directionalShadowTimer);
+    AdvanceGpuTimer(m_directionalShadowTimer);
+
+    BeginGpuTimer(m_pointShadowTimer);
     RenderPointShadowPass(m_shadowLightPos);
+    EndGpuTimer(m_pointShadowTimer);
+    AdvanceGpuTimer(m_pointShadowTimer);
+
+    BeginGpuTimer(m_sceneTimer);
     RenderScenePass(camera, projection, lightSpaceMatrix, viewportWidth, viewportHeight, currentTime);
+    EndGpuTimer(m_sceneTimer);
+    AdvanceGpuTimer(m_sceneTimer);
+
+    BeginGpuTimer(m_postProcessTimer);
     RenderPostProcessPass(viewportWidth, viewportHeight);
+    EndGpuTimer(m_postProcessTimer);
+    AdvanceGpuTimer(m_postProcessTimer);
+
+    RefreshGpuTimingSummary();
+    UpdateOverlayTitle(window, currentTime);
 }
 
 void Renderer::SetOverrideMode(TextureOverrideMode mode)
@@ -1162,5 +1186,347 @@ void Renderer::DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer)
     }
     framebuffer.width = 0;
     framebuffer.height = 0;
+}
+
+void Renderer::SetWindowTitleBase(const std::string& title)
+{
+    m_windowTitleBase = title;
+    m_activeWindowTitle.clear();
+    m_forceOverlayUpdate = true;
+}
+
+void Renderer::ToggleMetricsOverlay()
+{
+    m_metricsOverlayEnabled = !m_metricsOverlayEnabled;
+    if (m_metricsOverlayEnabled)
+    {
+        PushOverlayStatus("Overlay ligado");
+    }
+    else
+    {
+        PushOverlayStatus("Overlay desligado");
+    }
+    m_forceOverlayUpdate = true;
+}
+
+void Renderer::ClearDebugMessages()
+{
+    const std::size_t removed = m_debugMessages.size();
+    m_debugMessages.clear();
+    std::ostringstream ss;
+    ss << "GL msgs limpas (" << removed << ")";
+    PushOverlayStatus(ss.str());
+    std::cout << "[Renderer] " << ss.str() << std::endl;
+    m_forceOverlayUpdate = true;
+}
+
+void Renderer::PushDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, const std::string& message)
+{
+    RendererDebugMessage entry;
+    entry.source = source;
+    entry.type = type;
+    entry.severity = severity;
+    entry.id = id;
+    entry.text = message;
+    entry.timestamp = glfwGetTime();
+
+    if (m_debugMessages.size() >= kMaxDebugMessages)
+    {
+        m_debugMessages.erase(m_debugMessages.begin());
+    }
+    m_debugMessages.push_back(entry);
+
+    WriteDebugMessageToConsole(entry);
+    m_forceOverlayUpdate = true;
+    if (severity == GL_DEBUG_SEVERITY_HIGH || severity == GL_DEBUG_SEVERITY_MEDIUM)
+    {
+        PushOverlayStatus("Novo alerta GL #" + std::to_string(id));
+    }
+}
+
+void Renderer::PushOverlayStatus(const std::string& message)
+{
+    m_overlayStatusMessage = message;
+    m_forceOverlayUpdate = true;
+}
+
+void Renderer::RecordCpuFrameTime(float deltaTimeSeconds)
+{
+    if (deltaTimeSeconds < 0.0f)
+    {
+        deltaTimeSeconds = 0.0f;
+    }
+
+    const float deltaMs = deltaTimeSeconds * 1000.0f;
+    m_cpuFrameHistory[m_cpuHistoryIndex] = deltaMs;
+    m_cpuHistoryIndex = (m_cpuHistoryIndex + 1) % kCpuHistorySize;
+    if (m_cpuHistoryIndex == 0)
+    {
+        m_cpuHistoryWrapped = true;
+    }
+
+    const std::size_t count = m_cpuHistoryWrapped ? kCpuHistorySize : m_cpuHistoryIndex;
+    if (count == 0)
+    {
+        return;
+    }
+
+    float minValue = std::numeric_limits<float>::max();
+    float maxValue = std::numeric_limits<float>::lowest();
+    float sum = 0.0f;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const float value = m_cpuFrameHistory[i];
+        minValue = std::min(minValue, value);
+        maxValue = std::max(maxValue, value);
+        sum += value;
+    }
+
+    m_cpuStats.lastMs = deltaMs;
+    m_cpuStats.minMs = minValue;
+    m_cpuStats.maxMs = maxValue;
+    m_cpuStats.avgMs = sum / static_cast<float>(count);
+    m_lastFps = deltaMs > 0.0f ? 1000.0f / deltaMs : 0.0f;
+}
+
+void Renderer::UpdateOverlayTitle(GLFWwindow* window, float currentTime)
+{
+    if (!window || m_windowTitleBase.empty())
+    {
+        return;
+    }
+
+    const float interval = 0.3f;
+    if (!m_forceOverlayUpdate && currentTime - m_lastOverlayUpdate < interval)
+    {
+        return;
+    }
+
+    m_lastOverlayUpdate = currentTime;
+    m_forceOverlayUpdate = false;
+
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed, std::ios::floatfield);
+    ss << m_windowTitleBase
+       << " | FPS " << std::setprecision(1) << m_lastFps;
+
+    if (m_metricsOverlayEnabled)
+    {
+        ss << " | CPU "
+           << std::setprecision(1) << m_cpuStats.lastMs << "ms"
+           << " (avg " << m_cpuStats.avgMs
+           << " / min " << m_cpuStats.minMs
+           << " / max " << m_cpuStats.maxMs << ")";
+
+        ss << " | GPU "
+           << std::setprecision(2)
+           << "Dir " << m_gpuTimingSummary.directionalShadowMs << "ms, "
+           << "Point " << m_gpuTimingSummary.pointShadowMs << "ms, "
+           << "Scene " << m_gpuTimingSummary.sceneMs << "ms, "
+           << "Post " << m_gpuTimingSummary.postProcessMs << "ms"
+           << " (Total " << m_gpuTimingSummary.Total() << "ms)";
+
+        ss << " | GL msgs " << m_debugMessages.size();
+
+        if (!m_overlayStatusMessage.empty())
+        {
+            ss << " | " << m_overlayStatusMessage;
+        }
+    }
+    else if (!m_overlayStatusMessage.empty())
+    {
+        ss << " | " << m_overlayStatusMessage;
+    }
+
+    const std::string overlayTitle = ss.str();
+    if (overlayTitle != m_activeWindowTitle)
+    {
+        glfwSetWindowTitle(window, overlayTitle.c_str());
+        m_activeWindowTitle = overlayTitle;
+    }
+}
+
+bool Renderer::SetupGpuTimers()
+{
+    if (!GLAD_GL_VERSION_3_3)
+    {
+        return false;
+    }
+
+    auto initTimer = [](GpuTimer& timer) {
+        glGenQueries(static_cast<GLsizei>(timer.startQueries.size()), timer.startQueries.data());
+        glGenQueries(static_cast<GLsizei>(timer.endQueries.size()), timer.endQueries.data());
+        timer.writeIndex = 0;
+        timer.primed = false;
+        timer.lastResultMs = 0.0;
+    };
+
+    initTimer(m_directionalShadowTimer);
+    initTimer(m_pointShadowTimer);
+    initTimer(m_sceneTimer);
+    initTimer(m_postProcessTimer);
+    return true;
+}
+
+void Renderer::DestroyGpuTimers()
+{
+    auto destroy = [](GpuTimer& timer) {
+        if (timer.startQueries[0] != 0)
+        {
+            glDeleteQueries(static_cast<GLsizei>(timer.startQueries.size()), timer.startQueries.data());
+            timer.startQueries = { 0, 0 };
+        }
+        if (timer.endQueries[0] != 0)
+        {
+            glDeleteQueries(static_cast<GLsizei>(timer.endQueries.size()), timer.endQueries.data());
+            timer.endQueries = { 0, 0 };
+        }
+        timer.writeIndex = 0;
+        timer.primed = false;
+        timer.lastResultMs = 0.0;
+    };
+
+    destroy(m_directionalShadowTimer);
+    destroy(m_pointShadowTimer);
+    destroy(m_sceneTimer);
+    destroy(m_postProcessTimer);
+    m_gpuTimersAvailable = false;
+}
+
+void Renderer::BeginGpuTimer(GpuTimer& timer)
+{
+    if (!m_gpuTimersAvailable)
+    {
+        return;
+    }
+    glQueryCounter(timer.startQueries[timer.writeIndex], GL_TIMESTAMP);
+}
+
+void Renderer::EndGpuTimer(GpuTimer& timer)
+{
+    if (!m_gpuTimersAvailable)
+    {
+        return;
+    }
+    glQueryCounter(timer.endQueries[timer.writeIndex], GL_TIMESTAMP);
+}
+
+void Renderer::AdvanceGpuTimer(GpuTimer& timer)
+{
+    if (!m_gpuTimersAvailable)
+    {
+        return;
+    }
+
+    const int readIndex = 1 - timer.writeIndex;
+    if (timer.primed)
+    {
+        GLint available = 0;
+        glGetQueryObjectiv(timer.endQueries[readIndex], GL_QUERY_RESULT_AVAILABLE, &available);
+        if (available != 0)
+        {
+            GLuint64 startTime = 0;
+            GLuint64 endTime = 0;
+            glGetQueryObjectui64v(timer.startQueries[readIndex], GL_QUERY_RESULT, &startTime);
+            glGetQueryObjectui64v(timer.endQueries[readIndex], GL_QUERY_RESULT, &endTime);
+            if (endTime > startTime)
+            {
+                timer.lastResultMs = static_cast<double>(endTime - startTime) / 1000000.0;
+            }
+        }
+    }
+    else
+    {
+        timer.primed = true;
+    }
+
+    timer.writeIndex = readIndex;
+}
+
+void Renderer::RefreshGpuTimingSummary()
+{
+    if (!m_gpuTimersAvailable)
+    {
+        m_gpuTimingSummary = {};
+        return;
+    }
+
+    m_gpuTimingSummary.directionalShadowMs = m_directionalShadowTimer.lastResultMs;
+    m_gpuTimingSummary.pointShadowMs = m_pointShadowTimer.lastResultMs;
+    m_gpuTimingSummary.sceneMs = m_sceneTimer.lastResultMs;
+    m_gpuTimingSummary.postProcessMs = m_postProcessTimer.lastResultMs;
+}
+
+const char* Renderer::DebugSourceToString(GLenum source)
+{
+    switch (source)
+    {
+    case GL_DEBUG_SOURCE_API:
+        return "API";
+    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
+        return "Window";
+    case GL_DEBUG_SOURCE_SHADER_COMPILER:
+        return "Shader";
+    case GL_DEBUG_SOURCE_THIRD_PARTY:
+        return "3rdParty";
+    case GL_DEBUG_SOURCE_APPLICATION:
+        return "App";
+    case GL_DEBUG_SOURCE_OTHER:
+        return "Other";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* Renderer::DebugTypeToString(GLenum type)
+{
+    switch (type)
+    {
+    case GL_DEBUG_TYPE_ERROR:
+        return "Error";
+    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+        return "Deprecated";
+    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+        return "Undefined";
+    case GL_DEBUG_TYPE_PORTABILITY:
+        return "Portability";
+    case GL_DEBUG_TYPE_PERFORMANCE:
+        return "Performance";
+    case GL_DEBUG_TYPE_MARKER:
+        return "Marker";
+    case GL_DEBUG_TYPE_PUSH_GROUP:
+        return "PushGroup";
+    case GL_DEBUG_TYPE_POP_GROUP:
+        return "PopGroup";
+    case GL_DEBUG_TYPE_OTHER:
+        return "Other";
+    default:
+        return "Unknown";
+    }
+}
+
+const char* Renderer::DebugSeverityToString(GLenum severity)
+{
+    switch (severity)
+    {
+    case GL_DEBUG_SEVERITY_HIGH:
+        return "High";
+    case GL_DEBUG_SEVERITY_MEDIUM:
+        return "Medium";
+    case GL_DEBUG_SEVERITY_LOW:
+        return "Low";
+    case GL_DEBUG_SEVERITY_NOTIFICATION:
+        return "Note";
+    default:
+        return "Unknown";
+    }
+}
+
+void Renderer::WriteDebugMessageToConsole(const RendererDebugMessage& message) const
+{
+    std::cerr << "[OpenGL][" << DebugSeverityToString(message.severity) << "] "
+              << "(" << DebugSourceToString(message.source) << "/"
+              << DebugTypeToString(message.type) << " #" << message.id << ") "
+              << message.text << std::endl;
 }
 

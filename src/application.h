@@ -15,7 +15,7 @@ struct ApplicationConfig
 {
     int width = 1280;
     int height = 720;
-    const char* title = "Aula 8.4 - Application Host";
+    const char* title = "Aula 9.2 - Debugging e Profiling";
 };
 
 class Application
@@ -29,6 +29,15 @@ public:
 private:
     bool Initialize();
     void Shutdown();
+    void SetupDebugOutput();
+    void ForwardDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, const std::string& message);
+    static void APIENTRY OpenGLDebugCallback(GLenum source,
+                                             GLenum type,
+                                             GLuint id,
+                                             GLenum severity,
+                                             GLsizei length,
+                                             const GLchar* message,
+                                             const void* userParam);
 
     ApplicationConfig m_config;
     GLFWwindow* m_window = nullptr;
@@ -38,5 +47,6 @@ private:
     InputController m_inputController;
     RendererController m_rendererController;
     float m_lastFrame = 0.0f;
+    bool m_debugOutputEnabled = false;
 };
 
