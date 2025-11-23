@@ -9,6 +9,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_access.hpp>
 
 namespace
 {
@@ -33,6 +34,61 @@ constexpr std::array<float, 24> kFullscreenQuadVertices{
      1.0f, -1.0f, 1.0f, 0.0f,
      1.0f,  1.0f, 1.0f, 1.0f
 };
+}
+
+struct Plane
+{
+    glm::vec3 normal{ 0.0f };
+    float distance = 0.0f;
+};
+
+struct Frustum
+{
+    std::array<Plane, 6> planes{};
+
+    bool IsSphereVisible(const glm::vec3& center, float radius) const
+    {
+        for (const auto& plane : planes)
+        {
+            if (glm::dot(plane.normal, center) + plane.distance < -radius)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+namespace
+{
+Plane NormalizePlane(const glm::vec4& plane)
+{
+    const glm::vec3 normal = glm::vec3(plane);
+    const float length = glm::length(normal);
+    if (length == 0.0f)
+    {
+        return Plane{};
+    }
+    return Plane{ normal / length, plane.w / length };
+}
+
+Frustum ExtractFrustum(const glm::mat4& matrix)
+{
+    Frustum frustum;
+    const glm::vec4 rowX = glm::row(matrix, 0);
+    const glm::vec4 rowY = glm::row(matrix, 1);
+    const glm::vec4 rowZ = glm::row(matrix, 2);
+    const glm::vec4 rowW = glm::row(matrix, 3);
+
+    frustum.planes[0] = NormalizePlane(rowW + rowX);
+    frustum.planes[1] = NormalizePlane(rowW - rowX);
+    frustum.planes[2] = NormalizePlane(rowW + rowY);
+    frustum.planes[3] = NormalizePlane(rowW - rowY);
+    frustum.planes[4] = NormalizePlane(rowW + rowZ);
+    frustum.planes[5] = NormalizePlane(rowW - rowZ);
+
+    return frustum;
+}
 
 GLuint LoadAndCompileShader(const std::string& path, GLenum type)
 {
@@ -232,6 +288,9 @@ bool Renderer::Initialize(Scene* scene)
         return false;
     }
 
+    glGenBuffers(1, &m_instanceVBO);
+    m_instanceBufferCapacity = 0;
+
     ApplyOverrideMode(m_overrideMode);
     m_initialized = true;
     return true;
@@ -269,6 +328,12 @@ void Renderer::Shutdown()
             glDeleteTextures(1, &m_defaultWhiteTexture);
             m_defaultWhiteTexture = 0;
         }
+        if (m_instanceVBO != 0)
+        {
+            glDeleteBuffers(1, &m_instanceVBO);
+            m_instanceVBO = 0;
+            m_instanceBufferCapacity = 0;
+        }
         return;
     }
 
@@ -300,6 +365,12 @@ void Renderer::Shutdown()
     {
         glDeleteTextures(1, &m_defaultWhiteTexture);
         m_defaultWhiteTexture = 0;
+    }
+    if (m_instanceVBO != 0)
+    {
+        glDeleteBuffers(1, &m_instanceVBO);
+        m_instanceVBO = 0;
+        m_instanceBufferCapacity = 0;
     }
 
     m_sceneModels.clear();
@@ -341,6 +412,7 @@ void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float curre
         m_carObject = m_scene->GetCarObject();
     }
     UpdateOrbitingPointLight(currentTime);
+    m_lastCameraPos = camera.GetPosition();
 
     glm::mat4 projection = glm::perspective(glm::radians(camera.GetZoom()),
                                             static_cast<float>(viewportWidth) / static_cast<float>(viewportHeight),
@@ -404,6 +476,7 @@ bool Renderer::CreateShaders()
     m_pointShadowLightPosLoc = glGetUniformLocation(m_sceneShader.program, "pointShadowLightPos");
     m_pointShadowFarPlaneLoc = glGetUniformLocation(m_sceneShader.program, "shadowFarPlane");
     m_shadowPointIndexLoc = glGetUniformLocation(m_sceneShader.program, "shadowPointIndex");
+    m_sceneInstanceFlagLoc = glGetUniformLocation(m_sceneShader.program, "uUseInstanceTransform");
     const GLint samplerLoc = glGetUniformLocation(m_sceneShader.program, "textureSampler");
     if (samplerLoc >= 0)
     {
@@ -417,15 +490,25 @@ bool Renderer::CreateShaders()
     {
         glUniform1i(m_pointShadowMapLoc, 2);
     }
+    if (m_sceneInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_sceneInstanceFlagLoc, 0);
+    }
 
     m_directionalDepthShader.Use();
     m_dirDepthModelLoc = glGetUniformLocation(m_directionalDepthShader.program, "model");
     m_dirDepthLightSpaceLoc = glGetUniformLocation(m_directionalDepthShader.program, "lightSpaceMatrix");
+    m_dirDepthInstanceFlagLoc = glGetUniformLocation(m_directionalDepthShader.program, "uUseInstanceTransform");
+    if (m_dirDepthInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_dirDepthInstanceFlagLoc, 0);
+    }
 
     m_pointDepthShader.Use();
     m_pointDepthModelLoc = glGetUniformLocation(m_pointDepthShader.program, "model");
     m_pointDepthLightPosLoc = glGetUniformLocation(m_pointDepthShader.program, "lightPos");
     m_pointDepthFarPlaneLoc = glGetUniformLocation(m_pointDepthShader.program, "far_plane");
+    m_pointDepthInstanceFlagLoc = glGetUniformLocation(m_pointDepthShader.program, "uUseInstanceTransform");
     for (int i = 0; i < 6; ++i)
     {
         m_pointDepthShadowMatricesLoc[i] =
@@ -434,6 +517,10 @@ bool Renderer::CreateShaders()
     if (m_pointDepthFarPlaneLoc >= 0)
     {
         glUniform1f(m_pointDepthFarPlaneLoc, kPointShadowFarPlane);
+    }
+    if (m_pointDepthInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_pointDepthInstanceFlagLoc, 0);
     }
 
     m_postProcessShader.Use();
@@ -646,7 +733,12 @@ void Renderer::RenderDirectionalShadowPass(const glm::mat4& lightSpaceMatrix)
     {
         glUniformMatrix4fv(m_dirDepthLightSpaceLoc, 1, GL_FALSE, glm::value_ptr(lightSpaceMatrix));
     }
-    DrawSceneObjects(m_dirDepthModelLoc, m_directionalDepthShader.program, 0);
+    if (m_dirDepthInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_dirDepthInstanceFlagLoc, 0);
+    }
+    DrawSceneObjects(m_dirDepthModelLoc, m_directionalDepthShader.program, 0, nullptr, &m_lastCameraPos);
+    DrawInstancedBatches(m_dirDepthModelLoc, m_directionalDepthShader.program, 0, m_dirDepthInstanceFlagLoc, nullptr);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -681,7 +773,12 @@ void Renderer::RenderPointShadowPass(const glm::vec3& lightPos)
             glUniformMatrix4fv(m_pointDepthShadowMatricesLoc[i], 1, GL_FALSE, glm::value_ptr(shadowTransforms[i]));
         }
     }
-    DrawSceneObjects(m_pointDepthModelLoc, m_pointDepthShader.program, 0);
+    if (m_pointDepthInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_pointDepthInstanceFlagLoc, 0);
+    }
+    DrawSceneObjects(m_pointDepthModelLoc, m_pointDepthShader.program, 0, nullptr, &m_lastCameraPos);
+    DrawInstancedBatches(m_pointDepthModelLoc, m_pointDepthShader.program, 0, m_pointDepthInstanceFlagLoc, nullptr);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -736,7 +833,14 @@ void Renderer::RenderScenePass(const Camera& camera,
     m_directionalLights.Upload(m_sceneShader.program, currentTime);
     m_pointLights.Upload(m_sceneShader.program);
 
-    DrawSceneObjects(m_modelLoc, m_sceneShader.program, m_defaultWhiteTexture);
+    glm::vec3 cameraPos = camera.GetPosition();
+    const Frustum frustum = ExtractFrustum(projection * view);
+    if (m_sceneInstanceFlagLoc >= 0)
+    {
+        glUniform1i(m_sceneInstanceFlagLoc, 0);
+    }
+    DrawSceneObjects(m_modelLoc, m_sceneShader.program, m_defaultWhiteTexture, &frustum, &cameraPos);
+    DrawInstancedBatches(m_modelLoc, m_sceneShader.program, m_defaultWhiteTexture, m_sceneInstanceFlagLoc, &frustum);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -759,7 +863,11 @@ void Renderer::RenderPostProcessPass(int viewportWidth, int viewportHeight)
     glActiveTexture(GL_TEXTURE0);
 }
 
-void Renderer::DrawSceneObjects(GLint modelLocation, GLuint program, GLuint fallbackTexture)
+void Renderer::DrawSceneObjects(GLint modelLocation,
+                                GLuint program,
+                                GLuint fallbackTexture,
+                                const Frustum* frustum,
+                                const glm::vec3* cameraPos)
 {
     if (m_scene == nullptr)
     {
@@ -769,17 +877,151 @@ void Renderer::DrawSceneObjects(GLint modelLocation, GLuint program, GLuint fall
     const auto& objects = m_scene->GetObjects();
     for (const auto& object : objects)
     {
-        if (!object.GetModel())
+        Model* resolvedModel = object.GetModel();
+        if (resolvedModel == nullptr)
         {
             continue;
         }
+
+        const glm::mat4 modelMatrix = object.GetModelMatrix();
+        const glm::vec3 worldCenter = object.GetWorldCenter(modelMatrix);
+        const float worldRadius = object.GetWorldRadius();
+
+        if (frustum != nullptr && !frustum->IsSphereVisible(worldCenter, worldRadius))
+        {
+            continue;
+        }
+
+        if (cameraPos != nullptr)
+        {
+            const float distance = glm::length(worldCenter - *cameraPos);
+            resolvedModel = object.ResolveModelForDistance(distance);
+            if (resolvedModel == nullptr)
+            {
+                continue;
+            }
+        }
+
         if (modelLocation >= 0)
         {
-            const glm::mat4 modelMatrix = object.GetModelMatrix();
             glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(modelMatrix));
         }
-        object.GetModel()->Draw(program, fallbackTexture);
+        resolvedModel->Draw(program, fallbackTexture);
     }
+}
+
+void Renderer::DrawInstancedBatches(GLint modelLocation,
+                                    GLuint program,
+                                    GLuint fallbackTexture,
+                                    GLint instancingUniformLoc,
+                                    const Frustum* frustum)
+{
+    if (m_scene == nullptr || m_instanceVBO == 0)
+    {
+        return;
+    }
+
+    const auto& batches = m_scene->GetInstancedBatches();
+    if (batches.empty())
+    {
+        return;
+    }
+
+    glm::mat4 identity(1.0f);
+    if (modelLocation >= 0)
+    {
+        glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(identity));
+    }
+    if (instancingUniformLoc >= 0)
+    {
+        glUniform1i(instancingUniformLoc, 1);
+    }
+
+    std::vector<glm::mat4> culledTransforms;
+    for (const auto& batch : batches)
+    {
+        if (batch.model == nullptr || batch.transforms.empty())
+        {
+            continue;
+        }
+
+        const std::vector<glm::mat4>* transformsToDraw = &batch.transforms;
+        if (frustum != nullptr)
+        {
+            culledTransforms.clear();
+            culledTransforms.reserve(batch.transforms.size());
+            for (const glm::mat4& transform : batch.transforms)
+            {
+                const glm::vec3 center = glm::vec3(transform[3]);
+                const float scaleX = glm::length(glm::vec3(transform[0]));
+                const float scaleY = glm::length(glm::vec3(transform[1]));
+                const float scaleZ = glm::length(glm::vec3(transform[2]));
+                const float maxScale = std::max({ scaleX, scaleY, scaleZ });
+                const float radius = batch.baseRadius * maxScale;
+                if (frustum->IsSphereVisible(center, radius))
+                {
+                    culledTransforms.push_back(transform);
+                }
+            }
+            transformsToDraw = &culledTransforms;
+        }
+
+        if (transformsToDraw->empty())
+        {
+            continue;
+        }
+
+        UpdateInstanceBuffer(*transformsToDraw);
+        batch.model->DrawInstanced(program,
+                                   fallbackTexture,
+                                   m_instanceVBO,
+                                   static_cast<GLsizei>(transformsToDraw->size()));
+    }
+
+    if (instancingUniformLoc >= 0)
+    {
+        glUniform1i(instancingUniformLoc, 0);
+    }
+}
+
+bool Renderer::EnsureInstanceBufferSize(std::size_t instanceCount)
+{
+    if (instanceCount == 0)
+    {
+        return true;
+    }
+
+    const GLsizeiptr requiredSize = static_cast<GLsizeiptr>(instanceCount * sizeof(glm::mat4));
+    if (requiredSize <= m_instanceBufferCapacity)
+    {
+        return true;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_instanceVBO);
+    glBufferData(GL_ARRAY_BUFFER, requiredSize, nullptr, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    m_instanceBufferCapacity = requiredSize;
+    return true;
+}
+
+void Renderer::UpdateInstanceBuffer(const std::vector<glm::mat4>& matrices)
+{
+    if (matrices.empty())
+    {
+        return;
+    }
+
+    if (!EnsureInstanceBufferSize(matrices.size()))
+    {
+        return;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_instanceVBO);
+    glBufferSubData(GL_ARRAY_BUFFER,
+                    0,
+                    static_cast<GLsizeiptr>(matrices.size() * sizeof(glm::mat4)),
+                    matrices.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 void Renderer::ApplyOverrideMode(TextureOverrideMode mode)

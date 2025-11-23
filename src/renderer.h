@@ -16,6 +16,8 @@
 #include "texture.h"
 #include "scene.h"
 
+struct Frustum;
+
 enum class TextureOverrideMode
 {
     Imported = 0,
@@ -76,10 +78,21 @@ private:
                          int viewportHeight,
                          float currentTime);
     void RenderPostProcessPass(int viewportWidth, int viewportHeight);
-    void DrawSceneObjects(GLint modelLocation, GLuint program, GLuint fallbackTexture);
+    void DrawSceneObjects(GLint modelLocation,
+                          GLuint program,
+                          GLuint fallbackTexture,
+                          const Frustum* frustum,
+                          const glm::vec3* cameraPos);
+    void DrawInstancedBatches(GLint modelLocation,
+                              GLuint program,
+                              GLuint fallbackTexture,
+                              GLint instancingUniformLoc,
+                              const Frustum* frustum);
     void ApplyOverrideMode(TextureOverrideMode mode);
     bool EnsureFramebufferSize(MultiRenderTargetFramebuffer& framebuffer, int width, int height);
     void DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer);
+    bool EnsureInstanceBufferSize(std::size_t instanceCount);
+    void UpdateInstanceBuffer(const std::vector<glm::mat4>& matrices);
 
     bool m_initialized = false;
     Scene* m_scene = nullptr;
@@ -144,5 +157,12 @@ private:
     GLint m_postHighlightsLoc = -1;
     GLint m_postExposureLoc = -1;
     GLint m_postBloomLoc = -1;
+    GLint m_sceneInstanceFlagLoc = -1;
+    GLint m_dirDepthInstanceFlagLoc = -1;
+    GLint m_pointDepthInstanceFlagLoc = -1;
+
+    GLuint m_instanceVBO = 0;
+    GLsizeiptr m_instanceBufferCapacity = 0;
+    glm::vec3 m_lastCameraPos{ 0.0f };
 };
 

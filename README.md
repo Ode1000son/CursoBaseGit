@@ -1,27 +1,26 @@
-# Aula 8.4 – Application Host e Input Layer
+# Aula 9.1 – Performance (Instancing, Culling e LOD)
 
-Quarta aula do módulo de renderização avançada. Depois de separar `Scene` e `Renderer`, agora extraímos tudo o que ainda restava no `main.cpp` para uma camada de **Application Host**: inicialização/loop da engine, gerenciamento de entrada e controles de debug viraram módulos dedicados. O entry point ficou reduzido a criar `Application` e chamar `Run()`, exatamente como em uma engine profissional.
+Primeira aula do módulo de otimização. Mantendo toda a arquitetura da engine criada nos módulos anteriores, adicionamos ferramentas de **renderização eficiente**: culling por frustum, níveis de detalhe (LOD) e instancing em GPU. Também trocamos o personagem por um peixe (`Fish.glb`) que já vem com 6 LODs distintos.
 
 ## Objetivos
-- **Application host**: classe `Application` responsável por inicializar GLFW/GLAD, criar a janela, coordenar `Scene`, `Renderer` e gerenciar o loop principal.
-- **InputController**: componente independente que trata teclado/mouse, captura FPS quando o botão direito está pressionado e expõe apenas `ProcessInput`.
-- **RendererController**: controla atalhos de depuração (`1/2/3`) desacoplados do renderer.
-- **Main mínimo**: `main.cpp` apenas instancia `Application` com uma configuração e chama `Run()`.
+- **LOD real**: carregar o mesmo `Fish.glb` filtrando nós `Fish_LOD0..5` e selecionar o nível automaticamente conforme a distância até a câmera.
+- **Frustum culling**: cada `SceneObject` tem uma bounding sphere em world space e só é enviado à GPU quando realmente aparece na câmera.
+- **Instancing**: dezenas de pilares/corais são desenhados com um único draw usando atributos de matriz (`mat4`) e um VBO dinâmico.
+- **Shaders cientes de instancing**: vertex e depth shaders recebem o atributo `aInstanceModel` e podem alternar entre uniform `model` e matriz por instância.
 
 ## Conteúdo Abordado
-- **`application.{h,cpp}`**: encapsula todo o ciclo de vida (Initialize, Run, Shutdown), além de manter instâncias de `Camera`, `Scene`, `Renderer`, `InputController` e `RendererController`.
-- **`input_controller.{h,cpp}`**: registra callbacks no GLFW, lida com estado do mouse e traduz eventos em chamadas da câmera.
-- **`renderer_controller.{h,cpp}`**: monitora teclas `1/2/3` e chama `Renderer::SetOverrideMode`.
-- **`main.cpp`**: reduzido a 7 linhas, mantendo o entry point puro.
-- **Demais módulos** (`scene`, `renderer`, `camera`, etc.) seguem reaproveitados da Aula 8.3 sem duplicação de lógica.
+- **`model.{h,cpp}`**: suporta filtro de nós (para carregar apenas um LOD do glTF) e calcula bounding boxes/esferas reutilizadas pela cena.
+- **`scene.{h,cpp}`**: cria os objetos com `SceneObjectLOD`, calcula bounds, gera lotes instanciados (`SceneInstancedBatch`) e substitui o personagem pelo peixe animado.
+- **`renderer.{h,cpp}`**: extrai frustum (`projection * view`), seleciona LODs por distância, aplica culling por esfera e gerencia um `instanceVBO` compartilhado para todos os batches.
+- **Shaders** (`vertex`, `directional_depth_vertex`, `depth_vertex`): adicionam `uUseInstanceTransform` e `aInstanceModel`.
 
 ## Controles
 - `W A S D`: movimentação no plano.
 - `Q / E`: movimento vertical.
 - `Botão direito + mouse`: look-around (cursor capturado enquanto pressionado).
-- `1`: restaura apenas as texturas importadas dos materiais.
-- `2`: força a textura checker globalmente.
-- `3`: aplica a textura de destaque metálica.
+- `1`: restaura texturas originais.
+- `2`: força textura checker.
+- `3`: textura metálica de destaque.
 - `ESC`: encerra a aplicação.
 
 ## Como executar
@@ -36,18 +35,18 @@ src/
 ├── application.{h,cpp}        # Host do loop + inicialização/encerramento
 ├── input_controller.{h,cpp}   # Teclado/mouse desacoplados
 ├── renderer_controller.{h,cpp}# Atalhos de depuração do renderer
-├── scene.{h,cpp}              # Scene graph, assets e animações
-├── renderer.{h,cpp}           # Renderer plug-and-play (sombras + MRT + pós)
+├── scene.{h,cpp}              # Scene graph + LOD + batches instanciados
+├── renderer.{h,cpp}           # Sombras, MRT, post + culling + instancing
 ├── camera.{h,cpp}
 ├── light_manager.{h,cpp}
 ├── material.{h,cpp}
-├── model.{h,cpp}
+├── model.{h,cpp}              # LOD filtering + bounding volumes
 └── texture.{h,cpp}
 
 assets/
-├── models/scene.gltf, car.glb, cube.gltf, etc.
+├── models/Fish.glb, car.glb, cube.gltf, CubeTexture.jpg
 └── shaders/
-    ├── vertex/fragment.glsl                # Passo principal (MRT)
+    ├── vertex/fragment.glsl                # MRT principal + instancing flag
     ├── postprocess_vertex/fragment.glsl    # Tone mapping + bloom
     ├── depth_vertex/fragment/geometry.glsl # Sombras omnidirecionais
     ├── directional_depth_vertex/fragment.glsl

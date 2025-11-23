@@ -3,9 +3,13 @@
 #include <cstddef>
 #include <iostream>
 #include <vector>
+#include <algorithm>
+#include <limits>
+#include <cctype>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtx/compatibility.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 Mesh::Mesh(std::vector<Vertex>&& vertices,
            std::vector<unsigned int>&& indices,
@@ -74,25 +78,69 @@ void Mesh::Draw(GLuint program, GLuint fallbackTextureID) const
     glBindVertexArray(0);
 }
 
-bool Model::LoadFromFile(const std::string& filePath)
+void Mesh::DrawInstanced(GLuint program, GLuint fallbackTextureID, GLuint instanceVBO, GLsizei instanceCount) const
 {
-    m_meshes.clear();
-    m_materials.clear();
-    m_ownedTextures.clear();
-    m_directory.clear();
-
-    const size_t lastSlash = filePath.find_last_of("/\\");
-    if (lastSlash != std::string::npos) {
-        m_directory = filePath.substr(0, lastSlash);
+    if (instanceCount <= 0) {
+        return;
     }
 
-    const aiScene* scene = m_importer.ReadFile(
-        filePath,
+    bool hasTextureBound = false;
+    if (m_material) {
+        m_material->Apply(program);
+        if (m_material->HasTexture()) {
+            m_material->BindTexture(GL_TEXTURE0);
+            hasTextureBound = true;
+        }
+    }
+
+    if (!hasTextureBound && fallbackTextureID != 0) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fallbackTextureID);
+    }
+
+    glBindVertexArray(m_VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, instanceVBO);
+
+    const std::size_t vec4Size = sizeof(glm::vec4);
+    for (int i = 0; i < 4; ++i) {
+        glEnableVertexAttribArray(3 + i);
+        glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), reinterpret_cast<const void*>(static_cast<std::size_t>(i) * vec4Size));
+        glVertexAttribDivisor(3 + i, 1);
+    }
+
+    glDrawElementsInstanced(GL_TRIANGLES,
+                            static_cast<GLsizei>(m_indices.size()),
+                            GL_UNSIGNED_INT,
+                            nullptr,
+                            instanceCount);
+    glBindVertexArray(0);
+}
+
+bool Model::LoadFromFile(const std::string& filePath)
+{
+    return LoadFromFile(filePath, {});
+}
+
+bool Model::LoadFromFile(const std::string& filePath, const std::vector<std::string>& allowedNodes)
+{
+    std::string directory;
+    const size_t lastSlash = filePath.find_last_of("/\\");
+    if (lastSlash != std::string::npos) {
+        directory = filePath.substr(0, lastSlash);
+    }
+
+    unsigned int importFlags =
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_OptimizeMeshes |
-        aiProcess_OptimizeGraph
-    );
+        aiProcess_OptimizeGraph;
+
+    if (!allowedNodes.empty())
+    {
+        importFlags &= ~aiProcess_OptimizeGraph;
+    }
+
+    const aiScene* scene = m_importer.ReadFile(filePath, importFlags);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
         std::cerr << "Erro ao carregar modelo (" << filePath << "): "
@@ -100,8 +148,47 @@ bool Model::LoadFromFile(const std::string& filePath)
         return false;
     }
 
-    ProcessNode(scene->mRootNode, scene, glm::mat4(1.0f));
-    return true;
+    return LoadFromScene(scene, directory, allowedNodes);
+}
+
+bool Model::LoadFromScene(const aiScene* scene, const std::string& directory, const std::vector<std::string>& allowedNodes)
+{
+    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+    {
+        std::cerr << "Cena inválida fornecida para carregamento de modelo." << std::endl;
+        return false;
+    }
+
+    m_meshes.clear();
+    m_materials.clear();
+    m_ownedTextures.clear();
+    m_directory = directory;
+    m_allowedNames.clear();
+    m_useNodeFilter = !allowedNodes.empty();
+    if (m_useNodeFilter)
+    {
+        for (const auto& nodeName : allowedNodes) {
+            const std::string normalized = NormalizeIdentifier(nodeName);
+            if (!normalized.empty()) {
+                m_allowedNames.insert(normalized);
+            }
+        }
+    }
+
+    ResetBounds();
+    ProcessNode(scene->mRootNode, scene, glm::mat4(1.0f), false);
+
+    if (m_hasBounds) {
+        m_boundingCenter = (m_aabbMin + m_aabbMax) * 0.5f;
+        m_boundingRadius = glm::length(m_aabbMax - m_boundingCenter);
+    } else {
+        m_boundingCenter = glm::vec3(0.0f);
+        m_boundingRadius = 0.0f;
+    }
+
+    m_useNodeFilter = false;
+    m_allowedNames.clear();
+    return !m_meshes.empty();
 }
 
 void Model::Draw(GLuint program, GLuint fallbackTextureID) const
@@ -111,17 +198,32 @@ void Model::Draw(GLuint program, GLuint fallbackTextureID) const
     }
 }
 
-void Model::ProcessNode(aiNode* node, const aiScene* scene, const glm::mat4& parentTransform)
+void Model::DrawInstanced(GLuint program, GLuint fallbackTextureID, GLuint instanceVBO, GLsizei instanceCount) const
+{
+    for (const auto& mesh : m_meshes) {
+        mesh->DrawInstanced(program, fallbackTextureID, instanceVBO, instanceCount);
+    }
+}
+
+void Model::ProcessNode(aiNode* node, const aiScene* scene, const glm::mat4& parentTransform, bool parentIncluded)
 {
     const glm::mat4 nodeTransform = parentTransform * ConvertMatrix(node->mTransformation);
+    const bool includeCurrentNode = parentIncluded || ShouldIncludeNode(node->mName.C_Str());
 
     for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-        m_meshes.emplace_back(ProcessMesh(mesh, scene, nodeTransform));
+        bool allowMesh = includeCurrentNode || !m_useNodeFilter;
+        if (m_useNodeFilter && !allowMesh) {
+            const std::string meshName = NormalizeIdentifier(mesh->mName.C_Str());
+            allowMesh = m_allowedNames.find(meshName) != m_allowedNames.end();
+        }
+        if (allowMesh || !m_useNodeFilter) {
+            m_meshes.emplace_back(ProcessMesh(mesh, scene, nodeTransform));
+        }
     }
 
     for (unsigned int i = 0; i < node->mNumChildren; ++i) {
-        ProcessNode(node->mChildren[i], scene, nodeTransform);
+        ProcessNode(node->mChildren[i], scene, nodeTransform, includeCurrentNode);
     }
 }
 
@@ -156,6 +258,7 @@ std::unique_ptr<Mesh> Model::ProcessMesh(aiMesh* mesh, const aiScene* scene, con
         }
 
         vertices.push_back(vertex);
+        UpdateBounds(vertex.position);
     }
 
     std::vector<unsigned int> indices;
@@ -387,5 +490,48 @@ glm::mat4 Model::ConvertMatrix(const aiMatrix4x4& matrix)
         matrix.a3, matrix.b3, matrix.c3, matrix.d3,
         matrix.a4, matrix.b4, matrix.c4, matrix.d4
     );
+}
+
+void Model::ResetBounds()
+{
+    m_aabbMin = glm::vec3(std::numeric_limits<float>::max());
+    m_aabbMax = glm::vec3(std::numeric_limits<float>::lowest());
+    m_boundingCenter = glm::vec3(0.0f);
+    m_boundingRadius = 0.0f;
+    m_hasBounds = false;
+}
+
+void Model::UpdateBounds(const glm::vec3& position)
+{
+    if (!m_hasBounds) {
+        m_aabbMin = position;
+        m_aabbMax = position;
+        m_hasBounds = true;
+        return;
+    }
+
+    m_aabbMin = glm::min(m_aabbMin, position);
+    m_aabbMax = glm::max(m_aabbMax, position);
+}
+
+bool Model::ShouldIncludeNode(const std::string& nodeName) const
+{
+    if (!m_useNodeFilter) {
+        return true;
+    }
+    const std::string normalized = NormalizeIdentifier(nodeName);
+    if (normalized.empty()) {
+        return false;
+    }
+    return m_allowedNames.find(normalized) != m_allowedNames.end();
+}
+
+std::string Model::NormalizeIdentifier(const std::string& name)
+{
+    std::string normalized = name;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return normalized;
 }
 
