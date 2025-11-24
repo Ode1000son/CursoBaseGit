@@ -1,71 +1,47 @@
-# Aula 10.2 – Sistema de Áudio com MiniAudio
+# CursoBaseGit – Base com PhysX integrado
 
-Segunda aula do **Projeto Final**. Mantemos a renderização completa da aula
-anterior e adicionamos um subsistema de áudio 3D baseado no **MiniAudio**, com
-carregamento declarativo, controle de volume global e integração direta com a
-câmera e com objetos principais da cena.
+Este diretório é a fundação limpa que usamos em todas as aulas. Agora ele
+também está preparado para o **PhysX 5**, garantindo que qualquer aula possa
+ativar física avançada sem tocar nos projetos gerados pelo Visual Studio.
 
-## Objetivos
-- **MiniAudio plug-and-play**: integrar o header único `miniaudio.h` via Premake
-  (sem alterar outras camadas da engine).
-- **AudioSystem modular**: classe dedicada (`audio_system.{h,cpp}`) cuida de
-  inicialização do dispositivo, carregamento de sons, posicionamento 3D e
-  cleanup.
-- **Configuração por dados**: `assets/scenes/audio_config.json` descreve cada
-  emissor (arquivo, loop, distância, posição inicial).
-- **Integração com Application/Camera**: listener segue a câmera, fontes ligadas
-  aos objetos `HeroFish` e `Car`, e controles de runtime para volume e eventos.
+## Objetivos desta configuração
+- **SDK oficial dentro de `vendor/physx`** – copiamos o conteúdo diretamente do
+  `AppTestFisica`, preservando `install/vc17win64-cpu-only/PhysX`.
+- **Premake consciente do PhysX** – `premake5.lua` adiciona include/lib dirs,
+  ativa `staticruntime "On"` e linka todas as libs necessárias
+  (`PhysX_64`, `PhysXCommon_64`, `PhysXExtensions_static_64`, etc.).
+- **Cópia automática de DLLs** – pós-build garante que `PhysX_64.dll` e
+  demais dependências sempre acompanhem o executável.
+- **Zero atrito para assets** – `xcopy` continua replicando `assets/` para o
+  diretório de saída.
 
-## Conteúdo Abordado
-- **`audio_system.{h,cpp}`**: encapsula o `ma_engine`, registra emissores,
-  expõe atualização de listener, um-shot sounds e volume global.
-- **`application.{h,cpp}`**: instancia o `AudioSystem`, sincroniza posições dos
-  objetos da cena, adiciona atalhos (`[ ]` e `Space`) e envia feedback pelo
-  debug overlay.
-- **`camera.h`**: expõe `GetUp()` para alimentar a orientação 3D do MiniAudio.
-- **`premake5.lua`**: inclui `vendor/miniaudio` e linka `ole32` (backend
-  WASAPI).
-- **Assets**: `audio_config.json` organiza trilha ambiente, motor do carro,
-  beacon do herói e o efeito one-shot de coleta.
+## Estrutura relevante
+- `src/` – código da base comum.
+- `assets/` – modelos, shaders e cenas compartilhadas.
+- `vendor/`  
+  - `physx/` – SDK completo (include/bin/pvdruntime).  
+  - `glfw-3.4`, `assimp`, `glm`, `miniaudio`, etc.
+- `premake5.lua` – script único que descreve a solução `CursoOpenGL`.
+- `build.bat` / `run.bat` – wrappers oficiais (Premake + MSBuild e execução).
 
-## Controles
-- `W A S D / Q / E`: movimentação e deslocamento vertical.
-- `Botão direito + mouse`: look-around com captura de cursor.
-- `1 / 2 / 3`: overrides de textura (renderer controller).
-- `F1`: alterna overlay de métricas da cena.
-- `F2`: limpa o log de debug do OpenGL.
-- `[` / `]`: diminui/aumenta o volume global do áudio em steps de 5%.
-- `Space`: reforça o ping sonoro do herói (reinicia o loop `hero_beacon`).
-- `ESC`: encerra a aplicação.
-
-## Como executar
+## Como validar
 ```powershell
-build.bat    # Premake + MSBuild (gera Aula10_SistemaAudio.sln)
-run.bat      # Executa build/bin/Debug/Aula10_SistemaAudio.exe
+# Gerar solução e compilar (sempre com a flag preferida pelo usuário)
+$env:NOPAUSE=1; .\build.bat
+
+# Executar o binário recém-gerado
+$env:NOPAUSE=1; .\run.bat
 ```
 
-## Arquivos Relevantes
-```
-src/
-├── audio_system.{h,cpp}        # MiniAudio engine + emissores 3D
-├── miniaudio_config.h          # Config global de decoders/defines do MiniAudio
-├── miniaudio_impl.cpp          # TU dedicado com MINIAUDIO_IMPLEMENTATION
-├── application.{h,cpp}         # Loop principal + integração de áudio
-├── camera.{h,cpp}              # GetUp() para listener
-├── input_controller.{h,cpp}
-├── renderer.{h,cpp}
-├── renderer_controller.{h,cpp}
-├── scene.{h,cpp}
-└── ...
+Ambos os scripts devem ser executados em primeiro plano para acompanhar os
+logs. Se qualquer etapa falhar, corrija antes de prosseguir – não seguimos em
+frente com o build quebrado.
 
-assets/
-├── audio/                      # mp3 de ambient, motor e efeitos
-├── scenes/final_scene.json     # Layout visual
-└── scenes/audio_config.json    # Layout sonoro (MiniAudio)
-```
-
-Mantivemos todos os **Princípios da Nova Arquitetura**: máximo
-reaproveitamento, componentes plug-and-play e zero alteração da funcionalidade
-visual existente. O áudio é uma camada adicional acoplada apenas via
-interfaces (`Application` ↔ `AudioSystem`), preservando a separação engine vs.
-renderer vs. UI.
+## Observações
+- `premake5.lua` centraliza toda a integração: inclui do PhysX, `libdirs`
+  específicos por configuração e cópias pós-build das DLLs.
+- O SDK permanece encapsulado no `vendor/physx`; código cliente continua
+  consumindo apenas as interfaces expostas pelo projeto.
+- Mantemos os **Princípios da Nova Arquitetura**: máximo reaproveitamento de
+  código, plug-and-play total, separação engine/renderer/UI, tolerância zero a
+  alteração de funcionalidade e modularidade extrema.
