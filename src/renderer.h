@@ -1,5 +1,8 @@
 #pragma once
 
+// Sistema de renderização avançado com shadow mapping, post-processing,
+// instancing, frustum culling e métricas de performance (CPU/GPU)
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -19,6 +22,7 @@
 
 struct Frustum;
 
+// Modos de override de textura para debug/visualização
 enum class TextureOverrideMode
 {
     Imported = 0,
@@ -86,23 +90,29 @@ struct GpuTimer
     double lastResultMs = 0.0;
 };
 
+// Renderer principal com pipeline multi-pass (shadow, scene, post-process)
+// Gerencia shaders, framebuffers, instancing e métricas de performance
 class Renderer
 {
 public:
     Renderer();
     ~Renderer();
 
+    // Inicializa shaders, framebuffers e recursos de shadow mapping
     bool Initialize(Scene* scene);
     void Shutdown();
 
+    // Renderiza um frame completo (shadow passes + scene + post-process)
     void RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime, float deltaTime);
 
     void SetOverrideMode(TextureOverrideMode mode);
     TextureOverrideMode GetOverrideMode() const { return m_overrideMode; }
     void SetWindowTitleBase(const std::string& title);
+    // Alterna overlay de métricas de performance
     void ToggleMetricsOverlay();
     bool IsMetricsOverlayEnabled() const { return m_metricsOverlayEnabled; }
     void ClearDebugMessages();
+    // Adiciona mensagem de debug do OpenGL à fila
     void PushDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, const std::string& message);
     void PushOverlayStatus(const std::string& message);
 

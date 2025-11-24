@@ -1,3 +1,7 @@
+// Implementação do renderer avançado
+// Pipeline completo: directional shadow mapping, point shadow mapping,
+// renderização de cena com PBR, post-processing com bloom e métricas
+
 #include "renderer.h"
 
 #include <algorithm>

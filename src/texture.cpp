@@ -1,3 +1,6 @@
+// Implementação do sistema de texturas
+// Carrega imagens via stb_image e gerencia recursos OpenGL
+
 #include "texture.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>

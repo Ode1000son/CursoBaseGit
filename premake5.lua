@@ -36,7 +36,8 @@ project "CursoOpenGL"
         "vendor/glm",
         "vendor/stb",
         "vendor/assimp/include",
-        "vendor/nlohmann/include"
+        "vendor/nlohmann/include",
+        "vendor/miniaudio"
     }
 
     libdirs {

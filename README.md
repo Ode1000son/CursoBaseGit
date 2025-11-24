@@ -1,63 +1,71 @@
-# Aula 10.1 – Engine Completa (Scene Loading + Advanced Lighting)
+# Aula 10.2 – Sistema de Áudio com MiniAudio
 
-Primeira aula do **Projeto Final**. A engine passa a carregar uma cena completa
-a partir de um arquivo JSON (`assets/scenes/final_scene.json`), reaproveitando
-toda a arquitetura modular construída nos módulos anteriores: render pipeline
-completo, instancing, LOD, debug overlay, métricas de CPU/GPU e overrides de
-textura.
+Segunda aula do **Projeto Final**. Mantemos a renderização completa da aula
+anterior e adicionamos um subsistema de áudio 3D baseado no **MiniAudio**, com
+carregamento declarativo, controle de volume global e integração direta com a
+câmera e com objetos principais da cena.
 
 ## Objetivos
-- **Integração total**: Application → Scene → Renderer → UI/controller trabalham
-  como módulos plug-and-play, mantendo o entry point limpo.
-- **Scene loading**: objetos, LODs, lotes instanciados, câmera e luzes são
-  definidos em JSON, permitindo reorganizar a cena sem recompilar.
-- **Advanced lighting setup**: direção, cor, animação e luzes que projetam
-  sombras são configuradas via dados, habilitando pipelines híbridos (directional
-  + point shadows).
+- **MiniAudio plug-and-play**: integrar o header único `miniaudio.h` via Premake
+  (sem alterar outras camadas da engine).
+- **AudioSystem modular**: classe dedicada (`audio_system.{h,cpp}`) cuida de
+  inicialização do dispositivo, carregamento de sons, posicionamento 3D e
+  cleanup.
+- **Configuração por dados**: `assets/scenes/audio_config.json` descreve cada
+  emissor (arquivo, loop, distância, posição inicial).
+- **Integração com Application/Camera**: listener segue a câmera, fontes ligadas
+  aos objetos `HeroFish` e `Car`, e controles de runtime para volume e eventos.
 
 ## Conteúdo Abordado
-- **`scene.{h,cpp}`**: adiciona parser JSON usando nlohmann, registra modelos,
-  resolve LODs por chave e gera batches instanciados conforme parâmetros da cena.
-- **`application.{h,cpp}` + `camera.{h,cpp}`**: câmera inicial vem do arquivo de
-  cena (posição, yaw/pitch, velocidade, sensibilidade).
-- **`renderer.{h,cpp}` + `light_manager.{h,cpp}`**: luzes direcionais e pontuais
-  são preenchidas dinamicamente; orbit/point shadow parameters passam a ser
-  dados da cena.
-- **`renderer_controller.{h,cpp}`**: continua expondo os toggles de textura e o
-  overlay de métricas herdado da Aula 9.2.
-- **Assets**: novo diretório `assets/scenes/` com a definição da cena final.
+- **`audio_system.{h,cpp}`**: encapsula o `ma_engine`, registra emissores,
+  expõe atualização de listener, um-shot sounds e volume global.
+- **`application.{h,cpp}`**: instancia o `AudioSystem`, sincroniza posições dos
+  objetos da cena, adiciona atalhos (`[ ]` e `Space`) e envia feedback pelo
+  debug overlay.
+- **`camera.h`**: expõe `GetUp()` para alimentar a orientação 3D do MiniAudio.
+- **`premake5.lua`**: inclui `vendor/miniaudio` e linka `ole32` (backend
+  WASAPI).
+- **Assets**: `audio_config.json` organiza trilha ambiente, motor do carro,
+  beacon do herói e o efeito one-shot de coleta.
 
 ## Controles
-- `W A S D`: movimentação padrão.
-- `Q / E`: deslocamento vertical.
+- `W A S D / Q / E`: movimentação e deslocamento vertical.
 - `Botão direito + mouse`: look-around com captura de cursor.
-- `1 / 2 / 3`: overrides de textura (importada, checker, highlight metálico).
-- `F1`: alterna overlay de métricas (CPU + GPU timers).
-- `F2`: limpa mensagens capturadas pelo OpenGL debug output.
+- `1 / 2 / 3`: overrides de textura (renderer controller).
+- `F1`: alterna overlay de métricas da cena.
+- `F2`: limpa o log de debug do OpenGL.
+- `[` / `]`: diminui/aumenta o volume global do áudio em steps de 5%.
+- `Space`: reforça o ping sonoro do herói (reinicia o loop `hero_beacon`).
 - `ESC`: encerra a aplicação.
 
 ## Como executar
-```bash
-build.bat    # Premake + MSBuild (gera Aula10_EngineCompleta.sln)
-run.bat      # Executa build/bin/Debug/Aula10_EngineCompleta.exe
+```powershell
+build.bat    # Premake + MSBuild (gera Aula10_SistemaAudio.sln)
+run.bat      # Executa build/bin/Debug/Aula10_SistemaAudio.exe
 ```
 
-## Estrutura Principal
+## Arquivos Relevantes
 ```
 src/
-├── application.{h,cpp}        # Host do loop + debug output
-├── camera.{h,cpp}             # Câmera FPS configurável
+├── audio_system.{h,cpp}        # MiniAudio engine + emissores 3D
+├── miniaudio_config.h          # Config global de decoders/defines do MiniAudio
+├── miniaudio_impl.cpp          # TU dedicado com MINIAUDIO_IMPLEMENTATION
+├── application.{h,cpp}         # Loop principal + integração de áudio
+├── camera.{h,cpp}              # GetUp() para listener
 ├── input_controller.{h,cpp}
+├── renderer.{h,cpp}
 ├── renderer_controller.{h,cpp}
-├── renderer.{h,cpp}           # Pipeline completo + métricas
-├── scene.{h,cpp}              # Parser JSON + objetos + instancing
-├── light_manager.{h,cpp}
-├── material.{h,cpp}
-├── model.{h,cpp}
-└── texture.{h,cpp}
+├── scene.{h,cpp}
+└── ...
 
 assets/
-├── models/ (Fish.glb, car.glb, cube.gltf, etc.)
-├── shaders/ (MRT, depth, post-process)
-└── scenes/final_scene.json    # Layout completo da engine
+├── audio/                      # mp3 de ambient, motor e efeitos
+├── scenes/final_scene.json     # Layout visual
+└── scenes/audio_config.json    # Layout sonoro (MiniAudio)
 ```
+
+Mantivemos todos os **Princípios da Nova Arquitetura**: máximo
+reaproveitamento, componentes plug-and-play e zero alteração da funcionalidade
+visual existente. O áudio é uma camada adicional acoplada apenas via
+interfaces (`Application` ↔ `AudioSystem`), preservando a separação engine vs.
+renderer vs. UI.

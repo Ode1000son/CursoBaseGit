@@ -1,0 +1,37 @@
+{
+    "globalVolume": 0.75,
+    "sounds": [
+        {
+            "id": "ambient_main",
+            "file": "audio/game-music-loop-3-144252.mp3",
+            "loop": true,
+            "spatial": false,
+            "playOnStart": true,
+            "volume": 0.45
+        },
+        {
+            "id": "car_engine_loop",
+            "file": "audio/game-start-6104.mp3",
+            "loop": true,
+            "spatial": true,
+            "playOnStart": true,
+            "position": { "x": 2.5, "y": -0.05, "z": -2.5 },
+            "volume": 0.7,
+            "minDistance": 2.0,
+            "maxDistance": 35.0
+        },
+        {
+            "id": "hero_beacon",
+            "file": "audio/game-bonus-02-294436.mp3",
+            "loop": true,
+            "spatial": true,
+            "playOnStart": true,
+            "position": { "x": 0.0, "y": 0.4, "z": 0.0 },
+            "volume": 0.35,
+            "minDistance": 1.0,
+            "maxDistance": 20.0
+        }
+    ]
+}
+
+

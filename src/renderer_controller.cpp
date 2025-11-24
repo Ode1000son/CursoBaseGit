@@ -1,3 +1,6 @@
+// Implementação do controlador de atalhos do renderer
+// Processa entrada de teclado para modos de textura e controles de overlay
+
 #include "renderer_controller.h"
 
 void RendererController::Initialize(Renderer* renderer)

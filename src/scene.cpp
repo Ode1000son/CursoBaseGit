@@ -1,3 +1,6 @@
+// Implementação do sistema de cena
+// Carrega modelos, texturas, configuração JSON e constrói batches instanciados
+
 #include "scene.h"
 
 #include <algorithm>

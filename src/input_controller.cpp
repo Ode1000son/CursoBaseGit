@@ -1,3 +1,6 @@
+// Implementação do controlador de entrada
+// Processa teclado (WASD/QE para movimento) e mouse (botão direito para look-around)
+
 #include "input_controller.h"
 
 #include <iostream>

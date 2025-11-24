@@ -1,3 +1,6 @@
+// Implementação de materiais Phong
+// Aplica propriedades de material aos shaders e gerencia texturas
+
 #include "material.h"
 
 #include <glm/gtc/type_ptr.hpp>

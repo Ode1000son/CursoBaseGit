@@ -1,3 +1,6 @@
+// Implementação do sistema de modelos
+// Processa cenas Assimp, extrai malhas, materiais e texturas
+
 #include "model.h"
 
 #include <cstddef>
