@@ -194,6 +194,15 @@ bool Model::LoadFromScene(const aiScene* scene, const std::string& directory, co
     return !m_meshes.empty();
 }
 
+glm::vec3 Model::GetBoundingHalfExtents() const
+{
+    if (!m_hasBounds)
+    {
+        return glm::vec3(0.5f);
+    }
+    return (m_aabbMax - m_aabbMin) * 0.5f;
+}
+
 void Model::Draw(GLuint program, GLuint fallbackTextureID) const
 {
     for (const auto& mesh : m_meshes) {

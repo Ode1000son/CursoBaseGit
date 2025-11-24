@@ -12,6 +12,7 @@
 #include <cctype>
 #include <assimp/Importer.hpp>
 #include <glm/gtc/constants.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -41,6 +42,99 @@ SceneObjectTransform ParseTransform(const json& node)
     transform.rotation = ParseVec3(node.value("rotation", json::object()), transform.rotation);
     transform.scale = ParseVec3(node.value("scale", json::object()), transform.scale);
     return transform;
+}
+
+std::string ToLowerCopy(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return value;
+}
+
+PhysicsShapeType ParsePhysicsShape(const std::string& value)
+{
+    const std::string normalized = ToLowerCopy(value);
+    if (normalized == "box")
+    {
+        return PhysicsShapeType::Box;
+    }
+    return PhysicsShapeType::Sphere;
+}
+
+PhysicsBodyMode ParsePhysicsMode(const std::string& value)
+{
+    const std::string normalized = ToLowerCopy(value);
+    if (normalized == "container")
+    {
+        return PhysicsBodyMode::Container;
+    }
+    return PhysicsBodyMode::Solid;
+}
+
+float ComputeAutoRadius(const SceneObject& object)
+{
+    const glm::vec3 halfExtents = object.GetScaledHalfExtents();
+    return glm::compMax(glm::abs(halfExtents));
+}
+
+glm::vec3 ComputeAutoHalfExtents(const SceneObject& object)
+{
+    glm::vec3 halfExtents = object.GetScaledHalfExtents();
+    if (glm::length(halfExtents) <= std::numeric_limits<float>::epsilon())
+    {
+        halfExtents = glm::vec3(0.5f);
+    }
+    halfExtents = glm::abs(halfExtents);
+    return glm::max(halfExtents, glm::vec3(0.05f));
+}
+
+SceneObjectPhysics ParsePhysicsDefinition(const json& node, const SceneObject& object)
+{
+    SceneObjectPhysics physics{};
+    if (!node.is_object())
+    {
+        physics.enabled = false;
+        return physics;
+    }
+
+    physics.enabled = node.value("enabled", physics.enabled);
+    if (!physics.enabled)
+    {
+        return physics;
+    }
+
+    physics.shape = ParsePhysicsShape(node.value("shape", "sphere"));
+    physics.mode = ParsePhysicsMode(node.value("mode", "solid"));
+    physics.mass = node.value("mass", physics.mass);
+    physics.autoRadius = node.value("autoRadius", physics.autoRadius);
+    physics.autoHalfExtents = node.value("autoHalfExtents", physics.autoHalfExtents);
+    physics.alignToBounds = node.value("alignToBounds", physics.alignToBounds);
+    physics.radius = node.value("radius", physics.radius);
+    physics.initialVelocity = ParseVec3(node.value("initialVelocity", json::object()), physics.initialVelocity);
+    physics.halfExtents = ParseVec3(node.value("halfExtents", json::object()), physics.halfExtents);
+    physics.linearDamping = node.value("linearDamping", physics.linearDamping);
+    physics.angularDamping = node.value("angularDamping", physics.angularDamping);
+    physics.restitution = node.value("restitution", physics.restitution);
+    physics.friction = node.value("friction", physics.friction);
+
+    if (physics.shape == PhysicsShapeType::Sphere && physics.autoRadius)
+    {
+        physics.radius = ComputeAutoRadius(object);
+    }
+    if (physics.shape == PhysicsShapeType::Box && physics.autoHalfExtents)
+    {
+        physics.halfExtents = ComputeAutoHalfExtents(object);
+    }
+
+    physics.radius = std::max(physics.radius, 0.05f);
+    physics.halfExtents = glm::max(glm::abs(physics.halfExtents), glm::vec3(0.05f));
+
+    if (!node.contains("alignToBounds") && !physics.autoRadius && !physics.autoHalfExtents)
+    {
+        physics.alignToBounds = false;
+    }
+
+    return physics;
 }
 
 void EnsureDefaultLighting(SceneLightingSetup& lighting)
@@ -123,6 +217,18 @@ void SceneObject::ApplyTransform(const SceneObjectTransform& transform)
     m_transform = transform;
 }
 
+void SceneObject::ApplyPhysicsPose(const glm::vec3& position, const glm::quat& rotation)
+{
+    m_transform.position = position;
+    glm::quat normalized = glm::normalize(rotation);
+    const glm::mat4 rotationMatrix = glm::mat4_cast(normalized);
+    float rotX = 0.0f;
+    float rotY = 0.0f;
+    float rotZ = 0.0f;
+    glm::extractEulerAngleXYZ(rotationMatrix, rotX, rotY, rotZ);
+    m_transform.rotation = glm::degrees(glm::vec3(rotX, rotY, rotZ));
+}
+
 glm::vec3 SceneObject::GetWorldCenter() const
 {
     const glm::mat4 modelMatrix = GetModelMatrix();
@@ -146,6 +252,17 @@ float SceneObject::GetWorldRadius() const
         return m_boundsRadius * maxScale;
     }
     return maxScale;
+}
+
+glm::vec3 SceneObject::GetScaledHalfExtents() const
+{
+    glm::vec3 halfExtents(0.5f);
+    if (m_model != nullptr && m_model->HasBounds())
+    {
+        halfExtents = m_model->GetBoundingHalfExtents();
+    }
+    const glm::vec3 scale = glm::abs(m_transform.scale);
+    return halfExtents * scale;
 }
 
 void SceneObject::SetBounds(const glm::vec3& center, float radius)
@@ -172,6 +289,18 @@ Model* SceneObject::ResolveModelForDistance(float distance) const
         }
     }
     return m_lodLevels.back().model != nullptr ? m_lodLevels.back().model : m_model;
+}
+
+void SceneObject::SetPhysicsDefinition(const SceneObjectPhysics& definition)
+{
+    m_physicsDefinition = definition;
+    m_hasPhysicsDefinition = definition.enabled;
+}
+
+void SceneObject::ClearPhysicsDefinition()
+{
+    m_hasPhysicsDefinition = false;
+    m_physicsDefinition = SceneObjectPhysics{};
 }
 
 bool Scene::Initialize()
@@ -434,6 +563,16 @@ bool Scene::LoadSceneDefinition(const std::string& path)
             created.SetBounds(model->GetBoundingCenter(), model->GetBoundingRadius());
         }
 
+        created.ClearPhysicsDefinition();
+        if (const auto physicsIt = objectJson.find("physics"); physicsIt != objectJson.end())
+        {
+            SceneObjectPhysics physicsDefinition = ParsePhysicsDefinition(*physicsIt, created);
+            if (physicsDefinition.enabled)
+            {
+                created.SetPhysicsDefinition(physicsDefinition);
+            }
+        }
+
         if (const auto lodIt = objectJson.find("lods"); lodIt != objectJson.end() && lodIt->is_array())
         {
             std::vector<SceneObjectLOD> lods;
@@ -513,6 +652,21 @@ bool Scene::LoadSceneDefinition(const std::string& path)
         m_instancedBatchConfigs.push_back(fallback);
     }
 
+    m_lastScenePath = path;
+    return true;
+}
+
+bool Scene::Reload()
+{
+    if (m_lastScenePath.empty())
+    {
+        return false;
+    }
+    if (!LoadSceneDefinition(m_lastScenePath))
+    {
+        return false;
+    }
+    BuildInstancedBatches();
     return true;
 }
 

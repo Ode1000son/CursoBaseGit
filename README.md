@@ -1,47 +1,50 @@
-# CursoBaseGit – Base com PhysX integrado
+# Aula 11.2 – Estruturas de Física e Parsing da Cena
 
-Este diretório é a fundação limpa que usamos em todas as aulas. Agora ele
-também está preparado para o **PhysX 5**, garantindo que qualquer aula possa
-ativar física avançada sem tocar nos projetos gerados pelo Visual Studio.
+Segunda etapa do módulo de PhysX. Saimos do puro setup e passamos a descrever
+informações físicas diretamente no JSON da cena, espelhando exatamente o que
+já existe no `AppTestFisica`. Toda a sincronização acontece dentro de
+`SceneObject`, mantendo a engine fiel aos **Princípios da Nova Arquitetura**.
 
-## Objetivos desta configuração
-- **SDK oficial dentro de `vendor/physx`** – copiamos o conteúdo diretamente do
-  `AppTestFisica`, preservando `install/vc17win64-cpu-only/PhysX`.
-- **Premake consciente do PhysX** – `premake5.lua` adiciona include/lib dirs,
-  ativa `staticruntime "On"` e linka todas as libs necessárias
-  (`PhysX_64`, `PhysXCommon_64`, `PhysXExtensions_static_64`, etc.).
-- **Cópia automática de DLLs** – pós-build garante que `PhysX_64.dll` e
-  demais dependências sempre acompanhem o executável.
-- **Zero atrito para assets** – `xcopy` continua replicando `assets/` para o
-  diretório de saída.
+## Objetivos
+- **Modelos de dados**: introduzir `PhysicsShapeType`, `PhysicsBodyMode` e
+  `SceneObjectPhysics`, além dos helpers `GetScaledHalfExtents`,
+  `GetLocalBoundsCenter` e `ApplyPhysicsPose`.
+- **Parsing completo**: interpretar o bloco `physics` do JSON, com suporte a
+  auto-radius/half extents, alinhamento opcional ao bounds e modo container.
+- **Ciclo de recarregamento**: rastrear `m_lastScenePath` e expor `Scene::Reload`
+  para permitir hot-reload da cena sem reconstruir a engine.
+- **Scripts/documentação**: atualizar nomes para `Aula11_PhysicsScene` nos
+  scripts de build/run e alinhar o README com o novo escopo da aula.
 
-## Estrutura relevante
-- `src/` – código da base comum.
-- `assets/` – modelos, shaders e cenas compartilhadas.
-- `vendor/`  
-  - `physx/` – SDK completo (include/bin/pvdruntime).  
-  - `glfw-3.4`, `assimp`, `glm`, `miniaudio`, etc.
-- `premake5.lua` – script único que descreve a solução `CursoOpenGL`.
-- `build.bat` / `run.bat` – wrappers oficiais (Premake + MSBuild e execução).
+## Passo a passo implementado
+1. **Estruturas do SceneObject** – Copiamos de `AppTestFisica` toda a
+   definição física, incluindo enums, struct e métodos auxiliares para leitura
+   e aplicação de poses vindas do PhysX.
+2. **Parsing dedicado** – Foram adicionados os helpers `ParsePhysicsDefinition`,
+   `ComputeAutoRadius` e `ComputeAutoHalfExtents`, garantindo consistência com
+   o projeto de referência e mantendo o JSON como fonte da verdade.
+3. **Reload seguro da cena** – `Scene::LoadSceneDefinition` registra o caminho,
+   `Scene::Reload` reconstrói objetos/batches on-demand e o resto da engine
+   continua plug-and-play.
+4. **Infra atualizada** – `premake5.lua`, `build.bat` e `run.bat` agora usam o
+   nome `Aula11_PhysicsScene`, mantendo o pipeline idêntico ao da aula anterior.
 
-## Como validar
+## Como executar
 ```powershell
-# Gerar solução e compilar (sempre com a flag preferida pelo usuário)
+# Build/execução rápidos da aula
 $env:NOPAUSE=1; .\build.bat
-
-# Executar o binário recém-gerado
 $env:NOPAUSE=1; .\run.bat
-```
 
-Ambos os scripts devem ser executados em primeiro plano para acompanhar os
-logs. Se qualquer etapa falhar, corrija antes de prosseguir – não seguimos em
-frente com o build quebrado.
 
-## Observações
-- `premake5.lua` centraliza toda a integração: inclui do PhysX, `libdirs`
-  específicos por configuração e cópias pós-build das DLLs.
-- O SDK permanece encapsulado no `vendor/physx`; código cliente continua
-  consumindo apenas as interfaces expostas pelo projeto.
-- Mantemos os **Princípios da Nova Arquitetura**: máximo reaproveitamento de
-  código, plug-and-play total, separação engine/renderer/UI, tolerância zero a
-  alteração de funcionalidade e modularidade extrema.
+## Arquivos relevantes
+- `src/scene.h` – definições das estruturas físicas e novas APIs do SceneObject.
+- `src/scene.cpp` – parsing do JSON, helpers de física e `Scene::Reload`.
+- `premake5.lua` – workspace `Aula11_PhysicsScene` com mesmas dependências da aula 11.1.
+- `build.bat` / `run.bat` – scripts oficiais apontando para o novo executável.
+
+## Observações finais
+Todas as mudanças mantêm máximo reaproveitamento, módulos plug-and-play,
+separação engine/renderer/UI, tolerância zero a alteração de funcionalidade e
+modularidade extrema. A cena continua sendo descrita apenas via JSON e nenhum
+código fora da camada apropriada tem acesso direto a detalhes específicos do
+backend de física.

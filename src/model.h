@@ -76,6 +76,7 @@ public:
     glm::vec3 GetBoundingCenter() const { return m_boundingCenter; }
     float GetBoundingRadius() const { return m_boundingRadius; }
     bool HasBounds() const { return m_hasBounds; }
+    glm::vec3 GetBoundingHalfExtents() const;
     // Carrega modelo a partir de cena Assimp já carregada
     bool LoadFromScene(const aiScene* scene, const std::string& directory, const std::vector<std::string>& allowedNodes);
 

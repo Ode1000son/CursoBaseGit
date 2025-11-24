@@ -9,6 +9,8 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #include "material.h"
 #include "model.h"
@@ -85,6 +87,36 @@ struct InstancedBatchConfig
     float twistMultiplier = 0.0f;
 };
 
+enum class PhysicsShapeType
+{
+    Sphere,
+    Box
+};
+
+enum class PhysicsBodyMode
+{
+    Solid,
+    Container
+};
+
+struct SceneObjectPhysics
+{
+    bool enabled = false;
+    PhysicsShapeType shape = PhysicsShapeType::Sphere;
+    PhysicsBodyMode mode = PhysicsBodyMode::Solid;
+    bool autoRadius = true;
+    bool autoHalfExtents = true;
+    bool alignToBounds = true;
+    float radius = 0.5f;
+    glm::vec3 halfExtents{ 0.5f };
+    float mass = 1.0f;
+    glm::vec3 initialVelocity{ 0.0f };
+    float linearDamping = 0.15f;
+    float angularDamping = 0.01f;
+    float restitution = 0.35f;
+    float friction = 0.7f;
+};
+
 // Objeto da cena com transformações, LOD e bounds para frustum culling
 class SceneObject
 {
@@ -104,6 +136,9 @@ public:
     glm::vec3 GetWorldCenter(const glm::mat4& modelMatrix) const;
     // Retorna raio do bounding sphere
     float GetWorldRadius() const;
+    glm::vec3 GetScaledHalfExtents() const;
+    glm::vec3 GetLocalBoundsCenter() const { return m_boundsCenter; }
+    float GetLocalBoundsRadius() const { return m_boundsRadius; }
     bool HasBounds() const { return m_hasBounds; }
     void SetBounds(const glm::vec3& center, float radius);
     // Define níveis de LOD baseados em distância
@@ -115,6 +150,12 @@ public:
     void ResetToBase();
     // Aplica uma nova transformação
     void ApplyTransform(const SceneObjectTransform& transform);
+    void ApplyPhysicsPose(const glm::vec3& position, const glm::quat& rotation);
+
+    bool HasPhysicsDefinition() const { return m_hasPhysicsDefinition; }
+    const SceneObjectPhysics& GetPhysicsDefinition() const { return m_physicsDefinition; }
+    void SetPhysicsDefinition(const SceneObjectPhysics& definition);
+    void ClearPhysicsDefinition();
 
 private:
     std::string m_name;
@@ -125,6 +166,8 @@ private:
     float m_boundsRadius = 1.0f;
     bool m_hasBounds = false;
     std::vector<SceneObjectLOD> m_lodLevels;
+    SceneObjectPhysics m_physicsDefinition{};
+    bool m_hasPhysicsDefinition = false;
 };
 
 // Gerencia toda a cena: objetos, modelos, iluminação e configurações
@@ -136,8 +179,10 @@ public:
     bool Initialize();
     // Atualiza animações e transformações da cena
     void Update(float currentTime);
+    bool Reload();
 
     const std::vector<SceneObject>& GetObjects() const { return m_objects; }
+    std::vector<SceneObject>& GetMutableObjects() { return m_objects; }
     SceneObject* GetCharacterObject() { return m_characterObject; }
     SceneObject* GetCarObject() { return m_carObject; }
     const std::vector<Model*>& GetModelPointers() const { return m_modelPointers; }
@@ -170,5 +215,6 @@ private:
     SceneLightingSetup m_lightingSetup;
     std::vector<InstancedBatchConfig> m_instancedBatchConfigs;
     std::unordered_map<std::string, Model*> m_modelLookup;
+    std::string m_lastScenePath;
 };
 
