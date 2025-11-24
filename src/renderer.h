@@ -1,8 +1,5 @@
 #pragma once
 
-// Sistema de renderização avançado com shadow mapping, post-processing,
-// instancing, frustum culling e métricas de performance (CPU/GPU)
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -20,9 +17,10 @@
 #include "texture.h"
 #include "scene.h"
 
+class PhysicsSystem;
+
 struct Frustum;
 
-// Modos de override de textura para debug/visualização
 enum class TextureOverrideMode
 {
     Imported = 0,
@@ -90,29 +88,23 @@ struct GpuTimer
     double lastResultMs = 0.0;
 };
 
-// Renderer principal com pipeline multi-pass (shadow, scene, post-process)
-// Gerencia shaders, framebuffers, instancing e métricas de performance
 class Renderer
 {
 public:
     Renderer();
     ~Renderer();
 
-    // Inicializa shaders, framebuffers e recursos de shadow mapping
-    bool Initialize(Scene* scene);
+    bool Initialize(Scene* scene, PhysicsSystem* physicsSystem);
     void Shutdown();
 
-    // Renderiza um frame completo (shadow passes + scene + post-process)
     void RenderFrame(GLFWwindow* window, const Camera& camera, float currentTime, float deltaTime);
 
     void SetOverrideMode(TextureOverrideMode mode);
     TextureOverrideMode GetOverrideMode() const { return m_overrideMode; }
     void SetWindowTitleBase(const std::string& title);
-    // Alterna overlay de métricas de performance
     void ToggleMetricsOverlay();
     bool IsMetricsOverlayEnabled() const { return m_metricsOverlayEnabled; }
     void ClearDebugMessages();
-    // Adiciona mensagem de debug do OpenGL à fila
     void PushDebugMessage(GLenum source, GLenum type, GLuint id, GLenum severity, const std::string& message);
     void PushOverlayStatus(const std::string& message);
 
@@ -135,6 +127,7 @@ private:
                          int viewportHeight,
                          float currentTime);
     void RenderPostProcessPass(int viewportWidth, int viewportHeight);
+    void RenderPhysicsDebugOverlay(const glm::mat4& viewProjection);
     void DrawSceneObjects(GLint modelLocation,
                           GLuint program,
                           GLuint fallbackTexture,
@@ -150,6 +143,8 @@ private:
     void DestroyFramebuffer(MultiRenderTargetFramebuffer& framebuffer);
     bool EnsureInstanceBufferSize(std::size_t instanceCount);
     void UpdateInstanceBuffer(const std::vector<glm::mat4>& matrices);
+    bool EnsurePhysicsDebugResources();
+    void DestroyPhysicsDebugResources();
     void RecordCpuFrameTime(float deltaTimeSeconds);
     void UpdateOverlayTitle(GLFWwindow* window, float currentTime);
     bool SetupGpuTimers();
@@ -165,11 +160,13 @@ private:
 
     bool m_initialized = false;
     Scene* m_scene = nullptr;
+    PhysicsSystem* m_physicsSystem = nullptr;
 
     ShaderProgram m_sceneShader;
     ShaderProgram m_directionalDepthShader;
     ShaderProgram m_pointDepthShader;
     ShaderProgram m_postProcessShader;
+    ShaderProgram m_physicsDebugShader;
 
     MultiRenderTargetFramebuffer m_sceneFramebuffer;
 
@@ -235,6 +232,9 @@ private:
 
     GLuint m_instanceVBO = 0;
     GLsizeiptr m_instanceBufferCapacity = 0;
+    GLuint m_physicsDebugVAO = 0;
+    GLuint m_physicsDebugVBO = 0;
+    GLint m_physicsDebugViewProjLoc = -1;
     glm::vec3 m_lastCameraPos{ 0.0f };
     std::string m_windowTitleBase;
     std::string m_activeWindowTitle;

@@ -1,8 +1,5 @@
 #pragma once
 
-// Sistema de cena que gerencia objetos 3D, iluminação, configuração de câmera
-// e carregamento de definições via JSON. Suporta LOD, instancing e animações.
-
 #include <vector>
 #include <array>
 #include <string>
@@ -17,7 +14,6 @@
 #include "texture.h"
 #include "light_manager.h"
 
-// Configuração inicial da câmera da cena
 struct SceneCameraSettings
 {
     glm::vec3 position{ 0.0f, 1.5f, 5.0f };
@@ -117,7 +113,6 @@ struct SceneObjectPhysics
     float friction = 0.7f;
 };
 
-// Objeto da cena com transformações, LOD e bounds para frustum culling
 class SceneObject
 {
 public:
@@ -129,26 +124,19 @@ public:
     SceneObjectTransform& Transform() { return m_transform; }
     const SceneObjectTransform& Transform() const { return m_transform; }
     const SceneObjectTransform& BaseTransform() const { return m_baseTransform; }
-    // Calcula matriz de modelo a partir da transformação
     glm::mat4 GetModelMatrix() const;
-    // Retorna centro do objeto no espaço mundial
     glm::vec3 GetWorldCenter() const;
     glm::vec3 GetWorldCenter(const glm::mat4& modelMatrix) const;
-    // Retorna raio do bounding sphere
     float GetWorldRadius() const;
     glm::vec3 GetScaledHalfExtents() const;
     glm::vec3 GetLocalBoundsCenter() const { return m_boundsCenter; }
     float GetLocalBoundsRadius() const { return m_boundsRadius; }
     bool HasBounds() const { return m_hasBounds; }
     void SetBounds(const glm::vec3& center, float radius);
-    // Define níveis de LOD baseados em distância
     void SetLODLevels(std::vector<SceneObjectLOD>&& lods);
-    // Seleciona modelo LOD apropriado para a distância fornecida
     Model* ResolveModelForDistance(float distance) const;
 
-    // Restaura transformação para o estado base
     void ResetToBase();
-    // Aplica uma nova transformação
     void ApplyTransform(const SceneObjectTransform& transform);
     void ApplyPhysicsPose(const glm::vec3& position, const glm::quat& rotation);
 
@@ -170,14 +158,10 @@ private:
     bool m_hasPhysicsDefinition = false;
 };
 
-// Gerencia toda a cena: objetos, modelos, iluminação e configurações
-// Carrega definição JSON e constrói batches instanciados
 class Scene
 {
 public:
-    // Carrega modelos, texturas e definição JSON da cena
     bool Initialize();
-    // Atualiza animações e transformações da cena
     void Update(float currentTime);
     bool Reload();
 
@@ -203,8 +187,10 @@ private:
     Model m_floorModel;
     Model m_carModel;
     Model m_pillarModel;
+    Model m_sphereModel;
 
     Texture m_floorTexture;
+    Texture m_sphereTexture;
 
     std::vector<SceneObject> m_objects;
     std::vector<SceneInstancedBatch> m_instancedBatches;

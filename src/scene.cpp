@@ -1,6 +1,3 @@
-// Implementação do sistema de cena
-// Carrega modelos, texturas, configuração JSON e constrói batches instanciados
-
 #include "scene.h"
 
 #include <algorithm>
@@ -326,6 +323,7 @@ bool Scene::Initialize()
     m_modelPointers.push_back(&m_floorModel);
     m_modelPointers.push_back(&m_carModel);
     m_modelPointers.push_back(&m_pillarModel);
+    m_modelPointers.push_back(&m_sphereModel);
     return true;
 }
 
@@ -426,6 +424,13 @@ bool Scene::LoadModels()
     }
     RegisterModel("Pillar", &m_pillarModel);
 
+    if (!m_sphereModel.LoadFromFile("assets/models/Sphere.glb") || !m_sphereModel.HasMeshes())
+    {
+        std::cerr << "Falha ao carregar modelo da esfera (Sphere.glb)." << std::endl;
+        return false;
+    }
+    RegisterModel("Sphere", &m_sphereModel);
+
     return true;
 }
 
@@ -434,6 +439,11 @@ bool Scene::LoadTextures()
     if (!m_floorTexture.LoadFromFile("assets/models/CubeTexture.jpg"))
     {
         std::cerr << "Falha ao carregar textura do chão (CubeTexture.jpg)." << std::endl;
+    }
+
+    if (!m_sphereTexture.LoadFromFile("assets/texture.png"))
+    {
+        std::cerr << "Falha ao carregar textura das esferas (texture.png)." << std::endl;
     }
 
     return true;
@@ -446,6 +456,16 @@ void Scene::ApplyBaseMaterials()
         m_floorModel.ApplyTextureIfMissing(&m_floorTexture);
         m_pillarModel.ApplyTextureIfMissing(&m_floorTexture);
     }
+
+    if (m_sphereTexture.GetID() != 0)
+    {
+        m_sphereModel.ApplyTextureIfMissing(&m_sphereTexture);
+    }
+
+    m_sphereModel.ForEachMaterial([](Material& material) {
+        material.SetSpecular(glm::vec3(0.0f));
+        material.SetShininess(1.0f);
+    });
 
     m_carModel.ForEachMaterial([](Material& material) {
         material.SetSpecular(glm::vec3(0.0f));

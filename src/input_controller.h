@@ -1,14 +1,10 @@
 #pragma once
 
-// Controlador de entrada do usuário (teclado e mouse)
-// Processa movimento WASD, rotação de câmera com mouse e callbacks GLFW
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include "camera.h"
 
-// Gerencia entrada de teclado e mouse para controle da câmera
 class InputController
 {
 public:

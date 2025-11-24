@@ -1,8 +1,6 @@
-// Implementação do renderer avançado
-// Pipeline completo: directional shadow mapping, point shadow mapping,
-// renderização de cena com PBR, post-processing com bloom e métricas
-
 #include "renderer.h"
+
+#include "physics_system.h"
 
 #include <algorithm>
 #include <array>
@@ -243,7 +241,7 @@ Renderer::~Renderer()
     Shutdown();
 }
 
-bool Renderer::Initialize(Scene* scene)
+bool Renderer::Initialize(Scene* scene, PhysicsSystem* physicsSystem)
 {
     if (m_initialized)
     {
@@ -256,6 +254,7 @@ bool Renderer::Initialize(Scene* scene)
     }
 
     m_scene = scene;
+    m_physicsSystem = physicsSystem;
     m_sceneModels = m_scene->GetModelPointers();
     m_characterObject = m_scene->GetCharacterObject();
     m_carObject = m_scene->GetCarObject();
@@ -379,12 +378,14 @@ void Renderer::Shutdown()
         m_instanceVBO = 0;
         m_instanceBufferCapacity = 0;
     }
+    DestroyPhysicsDebugResources();
     DestroyGpuTimers();
 
     m_sceneModels.clear();
     m_characterObject = nullptr;
     m_carObject = nullptr;
     m_scene = nullptr;
+    m_physicsSystem = nullptr;
     m_initialized = false;
 }
 
@@ -451,6 +452,8 @@ void Renderer::RenderFrame(GLFWwindow* window, const Camera& camera, float curre
     EndGpuTimer(m_postProcessTimer);
     AdvanceGpuTimer(m_postProcessTimer);
 
+    RenderPhysicsDebugOverlay(projection * camera.GetViewMatrix());
+
     RefreshGpuTimingSummary();
     UpdateOverlayTitle(window, currentTime);
 }
@@ -489,6 +492,11 @@ bool Renderer::CreateShaders()
     }
     if (!m_postProcessShader.Create("assets/shaders/postprocess_vertex.glsl",
                                     "assets/shaders/postprocess_fragment.glsl"))
+    {
+        return false;
+    }
+    if (!m_physicsDebugShader.Create("assets/shaders/physics_debug_vertex.glsl",
+                                     "assets/shaders/physics_debug_fragment.glsl"))
     {
         return false;
     }
@@ -573,6 +581,9 @@ bool Renderer::CreateShaders()
         glUniform1f(m_postBloomLoc, 0.85f);
     }
 
+    m_physicsDebugShader.Use();
+    m_physicsDebugViewProjLoc = glGetUniformLocation(m_physicsDebugShader.program, "uViewProj");
+
     return true;
 }
 
@@ -582,6 +593,7 @@ void Renderer::DestroyShaders()
     m_directionalDepthShader.Destroy();
     m_pointDepthShader.Destroy();
     m_postProcessShader.Destroy();
+    m_physicsDebugShader.Destroy();
 }
 
 bool Renderer::CreateFullscreenQuad()
@@ -963,6 +975,50 @@ void Renderer::RenderPostProcessPass(int viewportWidth, int viewportHeight)
     glActiveTexture(GL_TEXTURE0);
 }
 
+void Renderer::RenderPhysicsDebugOverlay(const glm::mat4& viewProjection)
+{
+    if (m_physicsSystem == nullptr || !m_physicsSystem->IsDebugRenderingEnabled())
+    {
+        return;
+    }
+
+    const auto& vertices = m_physicsSystem->GetDebugVertices();
+    if (vertices.empty())
+    {
+        return;
+    }
+
+    if (!EnsurePhysicsDebugResources() || m_physicsDebugShader.program == 0 || m_physicsDebugViewProjLoc < 0)
+    {
+        return;
+    }
+
+    glUseProgram(m_physicsDebugShader.program);
+    glUniformMatrix4fv(m_physicsDebugViewProjLoc, 1, GL_FALSE, glm::value_ptr(viewProjection));
+
+    glBindVertexArray(m_physicsDebugVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_physicsDebugVBO);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(vertices.size() * sizeof(PhysicsDebugVertex)),
+                 vertices.data(),
+                 GL_DYNAMIC_DRAW);
+
+    const GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glLineWidth(1.4f);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(vertices.size()));
+    glLineWidth(1.0f);
+    glDisable(GL_BLEND);
+    if (depthWasEnabled == GL_TRUE)
+    {
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    glBindVertexArray(0);
+}
+
 void Renderer::DrawSceneObjects(GLint modelLocation,
                                 GLuint program,
                                 GLuint fallbackTexture,
@@ -1122,6 +1178,51 @@ void Renderer::UpdateInstanceBuffer(const std::vector<glm::mat4>& matrices)
                     static_cast<GLsizeiptr>(matrices.size() * sizeof(glm::mat4)),
                     matrices.data());
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+bool Renderer::EnsurePhysicsDebugResources()
+{
+    if (m_physicsDebugVAO != 0 && m_physicsDebugVBO != 0)
+    {
+        return true;
+    }
+
+    glGenVertexArrays(1, &m_physicsDebugVAO);
+    glGenBuffers(1, &m_physicsDebugVBO);
+    if (m_physicsDebugVAO == 0 || m_physicsDebugVBO == 0)
+    {
+        return false;
+    }
+
+    glBindVertexArray(m_physicsDebugVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_physicsDebugVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(PhysicsDebugVertex) * 2, nullptr, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(PhysicsDebugVertex), reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1,
+                          3,
+                          GL_FLOAT,
+                          GL_FALSE,
+                          sizeof(PhysicsDebugVertex),
+                          reinterpret_cast<void*>(sizeof(glm::vec3)));
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    return true;
+}
+
+void Renderer::DestroyPhysicsDebugResources()
+{
+    if (m_physicsDebugVBO != 0)
+    {
+        glDeleteBuffers(1, &m_physicsDebugVBO);
+        m_physicsDebugVBO = 0;
+    }
+    if (m_physicsDebugVAO != 0)
+    {
+        glDeleteVertexArrays(1, &m_physicsDebugVAO);
+        m_physicsDebugVAO = 0;
+    }
 }
 
 void Renderer::ApplyOverrideMode(TextureOverrideMode mode)

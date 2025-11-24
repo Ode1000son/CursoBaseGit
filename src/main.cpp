@@ -1,7 +1,4 @@
-﻿// Ponto de entrada da aplicação
-// Cria e executa a aplicação principal com configuração padrão
-
-#include "application.h"
+﻿#include "application.h"
 
 int main()
 {

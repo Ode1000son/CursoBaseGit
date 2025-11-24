@@ -1,13 +1,9 @@
 #pragma once
 
-// Sistema de câmera FPS-style com controle de mouse e teclado
-// Suporta movimento livre, rotação, zoom e configuração dinâmica de parâmetros.
-// Usado para visão do jogador e como listener do sistema de áudio 3D.
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// Direções de movimento da câmera
+// Define possíveis direções de movimento da câmera
 enum Camera_Movement {
     FORWARD,
     BACKWARD,
@@ -39,8 +35,12 @@ public:
     // === GETTERS ===
     glm::vec3 GetPosition() const { return m_position; }
     glm::vec3 GetFront() const { return m_front; }
-    glm::vec3 GetUp() const { return m_up; }
+    glm::vec3 GetUpVector() const { return m_up; }
     float GetZoom() const { return m_zoom; }
+    float GetYaw() const { return m_yaw; }
+    float GetPitch() const { return m_pitch; }
+    float GetMovementSpeed() const { return m_movementSpeed; }
+    float GetMouseSensitivity() const { return m_mouseSensitivity; }
 
     // === CONFIGURAÇÃO DINÂMICA ===
     void SetPosition(const glm::vec3& position);

@@ -1,6 +1,3 @@
-// Implementação dos gerenciadores de iluminação
-// Calcula direções animadas e faz upload de uniforms para shaders
-
 #include "light_manager.h"
 
 #include <glm/gtc/type_ptr.hpp>

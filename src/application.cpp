@@ -1,12 +1,7 @@
-// Implementação da classe Application - gerencia o ciclo de vida completo
-// da aplicação, incluindo inicialização de sistemas, loop principal e shutdown.
-
 #include "application.h"
 
-#include <algorithm>
-#include <cstring>
 #include <iostream>
-#include <sstream>
+#include <cstring>
 
 Application::Application(const ApplicationConfig& config)
     : m_config(config)
@@ -35,8 +30,9 @@ int Application::Run()
 
         m_inputController.ProcessInput(deltaTime);
         m_rendererController.ProcessShortcuts(m_window);
+        ProcessHotkeys();
+        m_physicsSystem.Simulate(deltaTime, m_scene);
         m_renderer.RenderFrame(m_window, m_camera, currentFrame, deltaTime);
-        UpdateAudio(deltaTime);
 
         glfwSwapBuffers(m_window);
         glfwPollEvents();
@@ -86,29 +82,25 @@ bool Application::Initialize()
         std::cerr << "Falha ao inicializar a cena." << std::endl;
         return false;
     }
-    m_characterAudioObject = m_scene.GetCharacterObject();
-    m_vehicleAudioObject = m_scene.GetCarObject();
 
-    if (!m_renderer.Initialize(&m_scene))
+    if (!m_physicsSystem.Initialize())
+    {
+        std::cerr << "Falha ao inicializar o PhysX." << std::endl;
+        return false;
+    }
+
+    if (!m_physicsSystem.BuildFromScene(m_scene))
+    {
+        std::cerr << "Falha ao configurar o mundo físico." << std::endl;
+        return false;
+    }
+
+    if (!m_renderer.Initialize(&m_scene, &m_physicsSystem))
     {
         std::cerr << "Falha ao inicializar o renderer." << std::endl;
         return false;
     }
     m_renderer.SetWindowTitleBase(m_config.title);
-
-    if (!InitializeAudioSystem())
-    {
-        std::cerr << "Falha ao inicializar o sistema de áudio." << std::endl;
-        return false;
-    }
-    if (m_characterAudioObject != nullptr)
-    {
-        m_audioSystem.UpdateEmitterPosition("hero_beacon", m_characterAudioObject->GetWorldCenter());
-    }
-    if (m_vehicleAudioObject != nullptr)
-    {
-        m_audioSystem.UpdateEmitterPosition("car_engine_loop", m_vehicleAudioObject->GetWorldCenter());
-    }
 
     const SceneCameraSettings& cameraSettings = m_scene.GetCameraSettings();
     m_camera.SetPosition(cameraSettings.position);
@@ -129,12 +121,7 @@ bool Application::Initialize()
 
 void Application::Shutdown()
 {
-    if (m_shutdownPerformed)
-    {
-        return;
-    }
-    m_shutdownPerformed = true;
-
+    m_physicsSystem.Shutdown();
     m_renderer.Shutdown();
 
     if (m_window)
@@ -144,112 +131,6 @@ void Application::Shutdown()
     }
 
     glfwTerminate();
-    m_audioSystem.Shutdown();
-}
-
-bool Application::InitializeAudioSystem()
-{
-    AudioSystemConfig audioConfig;
-    audioConfig.assetsRoot = "assets";
-    audioConfig.configPath = "assets/scenes/audio_config.json";
-    audioConfig.globalVolume = 0.75f;
-    return m_audioSystem.Initialize(audioConfig);
-}
-
-void Application::UpdateAudio(float)
-{
-    if (!m_audioSystem.IsInitialized())
-    {
-        return;
-    }
-
-    m_audioSystem.UpdateListener(m_camera.GetPosition(), m_camera.GetFront(), m_camera.GetUp());
-
-    if (m_characterAudioObject != nullptr)
-    {
-        m_audioSystem.UpdateEmitterPosition("hero_beacon", m_characterAudioObject->GetWorldCenter());
-    }
-    if (m_vehicleAudioObject != nullptr)
-    {
-        m_audioSystem.UpdateEmitterPosition("car_engine_loop", m_vehicleAudioObject->GetWorldCenter());
-    }
-
-    HandleAudioShortcuts();
-    HandleOneShotTrigger();
-}
-
-void Application::HandleAudioShortcuts()
-{
-    if (!m_audioSystem.IsInitialized() || !m_window)
-    {
-        return;
-    }
-
-    auto notify = [this](float volume)
-    {
-        std::ostringstream stream;
-        stream << "Volume global de áudio: " << static_cast<int>(volume * 100.0f) << "%";
-        m_renderer.PushDebugMessage(GL_DEBUG_SOURCE_APPLICATION,
-                                    GL_DEBUG_TYPE_MARKER,
-                                    0,
-                                    GL_DEBUG_SEVERITY_NOTIFICATION,
-                                    stream.str());
-    };
-
-    const float step = 0.05f;
-    const int increaseState = glfwGetKey(m_window, GLFW_KEY_RIGHT_BRACKET);
-    if (increaseState == GLFW_PRESS)
-    {
-        if (!m_volumeUpPressed)
-        {
-            m_volumeUpPressed = true;
-            const float volume = std::clamp(m_audioSystem.GetGlobalVolume() + step, 0.0f, 1.0f);
-            m_audioSystem.SetGlobalVolume(volume);
-            notify(volume);
-        }
-    }
-    else
-    {
-        m_volumeUpPressed = false;
-    }
-
-    const int decreaseState = glfwGetKey(m_window, GLFW_KEY_LEFT_BRACKET);
-    if (decreaseState == GLFW_PRESS)
-    {
-        if (!m_volumeDownPressed)
-        {
-            m_volumeDownPressed = true;
-            const float volume = std::clamp(m_audioSystem.GetGlobalVolume() - step, 0.0f, 1.0f);
-            m_audioSystem.SetGlobalVolume(volume);
-            notify(volume);
-        }
-    }
-    else
-    {
-        m_volumeDownPressed = false;
-    }
-}
-
-void Application::HandleOneShotTrigger()
-{
-    if (!m_audioSystem.IsInitialized() || !m_window)
-    {
-        return;
-    }
-
-    const int triggerState = glfwGetKey(m_window, GLFW_KEY_SPACE);
-    if (triggerState == GLFW_PRESS)
-    {
-        if (!m_triggerBonusPressed)
-        {
-            m_audioSystem.PlayOneShot("hero_beacon");
-            m_triggerBonusPressed = true;
-        }
-    }
-    else
-    {
-        m_triggerBonusPressed = false;
-    }
 }
 
 void Application::SetupDebugOutput()
@@ -308,5 +189,71 @@ void APIENTRY Application::OpenGLDebugCallback(GLenum source,
     }
 
     app->ForwardDebugMessage(source, type, id, severity, text);
+}
+
+void Application::ProcessHotkeys()
+{
+    if (!m_window)
+    {
+        return;
+    }
+
+    auto handleToggle = [&](int key, bool& heldState, auto&& action) {
+        const bool pressed = glfwGetKey(m_window, key) == GLFW_PRESS;
+        if (pressed && !heldState)
+        {
+            action();
+        }
+        heldState = pressed;
+    };
+
+    handleToggle(GLFW_KEY_F4, m_f4Held, [&]() {
+        const bool enabled = !m_physicsSystem.IsDebugRenderingEnabled();
+        m_physicsSystem.SetDebugRenderingEnabled(enabled);
+        m_renderer.PushOverlayStatus(enabled ? "Debug de colisão ativado (F4)" : "Debug de colisão desativado (F4)");
+    });
+
+    handleToggle(GLFW_KEY_F5, m_f5Held, [&]() {
+        if (ReloadSceneKeepingCamera())
+        {
+            m_renderer.PushOverlayStatus("Cena recarregada (F5)");
+        }
+        else
+        {
+            m_renderer.PushOverlayStatus("Falha ao recarregar a cena (F5)");
+        }
+    });
+}
+
+bool Application::ReloadSceneKeepingCamera()
+{
+    const glm::vec3 savedPosition = m_camera.GetPosition();
+    const glm::vec3 savedUp = m_camera.GetUpVector();
+    const float savedYaw = m_camera.GetYaw();
+    const float savedPitch = m_camera.GetPitch();
+    const float savedSpeed = m_camera.GetMovementSpeed();
+    const float savedSensitivity = m_camera.GetMouseSensitivity();
+    const float savedZoom = m_camera.GetZoom();
+
+    if (!m_scene.Reload())
+    {
+        std::cerr << "Falha ao recarregar definição da cena." << std::endl;
+        return false;
+    }
+
+    if (!m_physicsSystem.BuildFromScene(m_scene))
+    {
+        std::cerr << "Falha ao reconstruir o mundo físico após recarregar a cena." << std::endl;
+        return false;
+    }
+
+    m_camera.SetPosition(savedPosition);
+    m_camera.SetUp(savedUp);
+    m_camera.SetOrientation(savedYaw, savedPitch);
+    m_camera.SetMovementSpeed(savedSpeed);
+    m_camera.SetMouseSensitivity(savedSensitivity);
+    m_camera.SetZoom(savedZoom);
+
+    return true;
 }
 

@@ -1,14 +1,10 @@
 #pragma once
 
-// Controlador de atalhos de teclado para o renderer
-// Processa teclas de atalho (1/2/3 para modos de textura, F1/F2 para overlay)
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include "renderer.h"
 
-// Gerencia atalhos de teclado relacionados ao renderer
 class RendererController
 {
 public:
